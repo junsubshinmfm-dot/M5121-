@@ -1,0 +1,3188 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M5121 배차 관리 시스템</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'맑은 고딕','Malgun Gothic',Arial,sans-serif;font-size:16px;background:#f0f2f5;color:#1a1a1a;min-height:100vh;}
+/* ── HEADER ── */
+.app-header{background:#1a3a6b;color:#fff;padding:10px 18px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.3);}
+.app-logo{font-size:26px;font-weight:900;letter-spacing:-1px;}
+.app-sub{font-size:15px;color:#aaccff;margin-top:1px;}
+.month-nav{display:flex;align-items:center;gap:8px;margin-left:auto;}
+.month-nav button{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;padding:6px 13px;border-radius:5px;cursor:pointer;font-size:16px;font-weight:bold;}
+.month-nav button:hover{background:rgba(255,255,255,.25);}
+.month-display{font-size:22px;font-weight:bold;min-width:120px;text-align:center;}
+/* ── TABS ── */
+.tab-bar{background:#fff;border-bottom:2px solid #d0d8e4;display:flex;overflow-x:auto;}
+.tab-btn{padding:11px 18px;border:none;background:none;cursor:pointer;font-size:16px;font-weight:600;color:#555;border-bottom:3px solid transparent;white-space:nowrap;transition:all .15s;}
+.tab-btn:hover{background:#f0f5ff;color:#1a3a6b;}
+.tab-btn.active{color:#1a3a6b;border-bottom-color:#1a3a6b;background:#f5f8ff;}
+/* ── TABS CONTENT ── */
+.tab-content{display:none;padding:14px;overflow-x:auto;}
+.tab-content.active{display:block;}
+/* ── TOP-BAR ── */
+.top-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center;}
+.top-bar-title{font-size:18px;font-weight:bold;color:#1a3a6b;}
+/* ── BUTTONS ── */
+.btn{padding:9px 16px;border-radius:5px;border:none;cursor:pointer;font-size:15px;font-weight:600;transition:opacity .15s,transform .1s;}
+.btn:hover{opacity:.87;transform:translateY(-1px);}
+.btn:active{transform:translateY(0);}
+.btn-primary{background:#1a3a6b;color:#fff;}
+.btn-success{background:#1e7e34;color:#fff;}
+.btn-info{background:#0d7fb8;color:#fff;}
+.btn-warning{background:#e07800;color:#fff;}
+.btn-danger{background:#c0392b;color:#fff;}
+.btn-secondary{background:#607080;color:#fff;}
+.btn-light{background:#e8ecf2;color:#333;border:1px solid #ccc;}
+.btn-sm{padding:5px 11px;font-size:14px;}
+/* ── FOOTER ── */
+.app-footer{position:sticky;bottom:0;background:#fff;border-top:2px solid #d0d8e4;padding:9px 14px;display:flex;gap:8px;flex-wrap:wrap;z-index:99;box-shadow:0 -2px 8px rgba(0,0,0,.1);}
+/* ── SCHEDULE TABLE ── */
+.sched-wrap{overflow:auto;max-height:calc(100vh - 180px);border:1px solid #c0c8d4;border-radius:6px;}
+.sched-table thead th{position:sticky;z-index:10;}
+.sched-table thead tr:first-child th{top:0;}
+.sched-table thead tr:nth-child(2) th{top:30px;}
+.sched-table{border-collapse:separate;border-spacing:0;font-size:14px;white-space:nowrap;}
+.sched-table th,.sched-table td{border:1px solid #b0b8c8;padding:3px 5px;text-align:center;}
+.sched-table .th-main{background:#1a3a6b;color:#fff;font-weight:700;padding:5px 7px;}
+.sched-table .th-sub{background:#2d5a9e;color:#fff;}
+.sched-table .th-day{background:#3a70b8;color:#fff;min-width:28px;}
+.sched-table .th-sat{background:#3a5898;color:#adf;}
+.sched-table .th-sun{background:#7a3030;color:#fdd;}
+.sched-table .col-seq{background:#e8edf5;font-weight:bold;width:32px;}
+.sched-table .col-veh{background:#e8edf5;width:46px;}
+.sched-table .col-name{text-align:left;padding-left:7px;min-width:58px;}
+.sched-table .col-info{background:#eef1f6;font-size:13px;}
+.day-cell{cursor:pointer;min-width:28px;transition:background .1s;}
+.day-cell:hover{background:#cce0ff!important;outline:2px solid #1a7fe8;}
+.cell-work{background:#fff;color:#1a1a1a;font-weight:600;}
+.cell-off{background:#fffacd;color:#7a6000;font-weight:600;}
+.cell-pre-off{background:#fff9c4!important;}
+.cell-su{background:#f3e5f5;color:#7b1fa2;font-weight:700;border:2px solid #9c27b0!important;}
+.cell-sat{background:#f0f5ff;}
+.cell-sun{background:#fff5f5;}
+.cell-hol{background:#f9a825!important;}
+.cell-selected{outline:3px solid #ff7700!important;background:#fff5e0!important;}
+.cell-note{background:#fffbe0!important;}
+.cell-dup{background:#ffdddd!important;outline:2px solid red!important;}
+.row-even td{background-color:rgba(240,245,255,.5);}
+/* summary cells */
+.sum-cell{background:#e8edf5;font-weight:700;font-size:14px;}
+.over-cell{background:#fff3e0;color:#b05000;font-weight:700;}
+.under-cell{background:#fce4ec;color:#a00;font-weight:700;}
+/* ── MODAL ── */
+.modal-bg{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center;}
+.modal-bg.open{display:flex;}
+.modal-box{background:#fff;border-radius:10px;padding:22px;max-width:520px;width:92%;max-height:85vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.3);}
+.modal-title{font-size:19px;font-weight:800;color:#1a3a6b;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #e0e8f0;}
+.modal-close{float:right;cursor:pointer;font-size:22px;color:#888;line-height:1;}
+.modal-close:hover{color:#c00;}
+.seq-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:7px;margin:12px 0;}
+.seq-btn{height:48px;font-size:18px;font-weight:800;border:2px solid #b0b8c8;border-radius:8px;cursor:pointer;background:#fff;transition:all .12s;}
+.seq-btn:hover{background:#cce0ff;border-color:#1a7fe8;}
+.seq-btn.active-sel{background:#1a3a6b;color:#fff;border-color:#1a3a6b;}
+.sp-btn{background:#fffbe0;border-color:#e0c800;color:#7a6200;}
+.sp-btn:hover{background:#fff7a0;}
+.clear-btn{background:#fce4ec;border-color:#f48fb1;color:#880e4f;font-size:14px;}
+.note-input{width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:14px;margin-top:8px;}
+/* ── ASSIGN MODAL ── */
+.assign-item{display:flex;align-items:center;padding:10px 12px;margin:4px 0;border:1px solid #d0d8e4;border-radius:6px;cursor:pointer;transition:all .12s;}
+.assign-item:hover{background:#e0f0ff;border-color:#1a7fe8;}
+.assign-item .ai-name{font-weight:700;font-size:14px;flex:1;}
+.assign-item .ai-info{font-size:14px;color:#666;}
+.assign-item .ai-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-left:6px;}
+.assign-item .badge-sp{background:#fffbe0;color:#7a6200;}
+.assign-item .badge-regular{background:#e0e8ff;color:#1a3a6b;}
+.assign-item .badge-pair{background:#f0e0ff;color:#6a1a8b;}
+.assign-empty{text-align:center;padding:20px;color:#888;font-size:14px;}
+.modal-ctx{background:#f0f4fa;padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:15px;color:#334;}
+/* ── FORM ELEMENTS ── */
+.form-group{margin-bottom:13px;}
+.form-label{display:block;margin-bottom:4px;font-weight:700;color:#334;font-size:15px;}
+.form-control{width:100%;padding:8px 11px;border:1px solid #bcc;border-radius:5px;font-size:14px;}
+.form-control:focus{border-color:#1a3a6b;outline:none;box-shadow:0 0 0 2px rgba(26,58,107,.2);}
+.form-select{width:100%;padding:8px 11px;border:1px solid #bcc;border-radius:5px;font-size:14px;background:#fff;}
+/* ── EMPLOYEE TABLE ── */
+.emp-table{border-collapse:collapse;width:100%;font-size:13px;}
+.emp-table th{background:#1a3a6b;color:#fff;padding:8px 12px;font-weight:700;}
+.emp-table td{border:1px solid #ccc;padding:7px 10px;text-align:center;}
+.emp-table tr:hover td{background:#f0f5ff;}
+/* ── WEEKLY DISPATCH ── */
+.week-tabs{display:flex;gap:6px;margin-bottom:12px;}
+.week-tab{padding:7px 14px;border:2px solid #b0c0d8;border-radius:5px;cursor:pointer;font-weight:600;font-size:13px;background:#fff;color:#445;}
+.week-tab.active{background:#1a3a6b;color:#fff;border-color:#1a3a6b;}
+.dispatch-table{border-collapse:collapse;font-size:14px;white-space:nowrap;}
+.dispatch-table th,.dispatch-table td{border:1px solid #b0b8c8;padding:4px 7px;text-align:center;}
+.dh-day{background:#1a3a6b;color:#fff;font-size:14px;font-weight:700;}
+.dh-col{background:#2d5a9e;color:#fff;font-size:13px;}
+.dam-row{background:#e8f4ff;}
+.dpm-row{background:#fff8e8;}
+.dw-row{background:#e8ffe8;}
+/* ── STAT CARDS ── */
+.stat-cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
+.stat-card{background:#fff;border-radius:8px;padding:12px 18px;box-shadow:0 1px 5px rgba(0,0,0,.1);min-width:110px;}
+.sc-label{font-size:13px;color:#667;margin-bottom:2px;}
+.sc-value{font-size:24px;font-weight:800;color:#1a3a6b;}
+.sc-sub{font-size:13px;color:#888;margin-top:1px;}
+/* ── SETTINGS ── */
+.settings-section{background:#fff;border-radius:8px;padding:18px;margin-bottom:16px;box-shadow:0 1px 5px rgba(0,0,0,.08);}
+.section-title{font-size:15px;font-weight:700;color:#1a3a6b;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e0e8f0;}
+.rotation-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0;}
+.rot-cell{display:flex;align-items:center;gap:6px;background:#f0f4fa;padding:7px 10px;border-radius:5px;}
+.rot-pos{font-weight:800;color:#1a3a6b;min-width:24px;}
+.rot-select{flex:1;padding:4px 6px;border:1px solid #bcc;border-radius:4px;font-size:13px;}
+/* ── LOADING ── */
+.loading-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,.85);z-index:2000;align-items:center;justify-content:center;flex-direction:column;gap:14px;}
+.loading-overlay.show{display:flex;}
+.loading-spinner{width:48px;height:48px;border:5px solid #d0d8e8;border-top-color:#1a3a6b;border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loading-text{font-size:17px;font-weight:700;color:#1a3a6b;}
+/* ── MISC ── */
+::-webkit-scrollbar{width:7px;height:7px;}
+::-webkit-scrollbar-track{background:#f0f2f5;}
+::-webkit-scrollbar-thumb{background:#a0aac0;border-radius:4px;}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:13px;font-weight:700;}
+.badge-primary{background:#1a3a6b;color:#fff;}
+.badge-success{background:#1e7e34;color:#fff;}
+.badge-warning{background:#e07800;color:#fff;}
+.badge-danger{background:#c0392b;color:#fff;}
+.alert{padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:13px;}
+.alert-info{background:#d0e8ff;border:1px solid #7ab8f5;color:#0a4080;}
+.sep{color:#bbb;padding:0 3px;}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loadingText">처리 중...</div>
+</div>
+
+<!-- HEADER -->
+<div class="app-header">
+  <div>
+    <div class="app-logo">🚌 M5121</div>
+    <div class="app-sub">배차 관리 시스템</div>
+  </div>
+  <div class="month-nav">
+    <button onclick="changeMonth(-1)">◀</button>
+    <div class="month-display" id="monthDisplay"></div>
+    <button onclick="changeMonth(1)">▶</button>
+    <button onclick="goToToday()" style="margin-left:6px;font-size:14px;padding:5px 10px;">오늘</button>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('monthly')" id="tab-monthly">📅 월간 근무표</button>
+  <button class="tab-btn" onclick="switchTab('weekly')" id="tab-weekly">🚌 주간 배차표</button>
+  <button class="tab-btn" onclick="switchTab('employees')" id="tab-employees">👤 직원 관리</button>
+  <button class="tab-btn" onclick="switchTab('vehicles')" id="tab-vehicles">🚗 차량 관리</button>
+  <button class="tab-btn" onclick="switchTab('settings')" id="tab-settings">⚙️ 설정</button>
+  <button class="tab-btn" onclick="switchTab('guide')" id="tab-guide">📖 규칙/지침서</button>
+</div>
+
+<!-- ─── TAB: 월간 근무표 ─── -->
+<div class="tab-content active" id="tab-content-monthly">
+  <div class="top-bar">
+    <span class="top-bar-title" id="monthlyTitle">2026년 2월 근무표</span>
+    <button class="btn btn-primary" onclick="autoGenerate()">🔄 자동 배치</button>
+
+    <button class="btn btn-success" onclick="exportExcel()">📥 엑셀 저장</button>
+    <button class="btn btn-info" onclick="exportAllImages()">🖼️ 이미지 저장</button>
+    <button class="btn btn-light" onclick="undoAction()" id="undoBtn" disabled>↩️ 실행취소</button>
+    <button class="btn btn-light" onclick="clearMonth()" style="margin-left:auto;">🗑️ 이번달 초기화</button>
+  </div>
+  <div class="stat-cards" id="statsCards"></div>
+  <div class="sched-wrap">
+    <div id="scheduleTable"></div>
+  </div>
+</div>
+
+<!-- ─── TAB: 주간 배차표 ─── -->
+<div class="tab-content" id="tab-content-weekly">
+  <div class="top-bar">
+    <span class="top-bar-title" id="weeklyTitle">주간 배차표</span>
+    <button class="btn btn-success" onclick="exportWeeklyExcel()">📥 엑셀 저장</button>
+    <button class="btn btn-info" onclick="exportWeeklyImages()">🖼️ 이미지 저장</button>
+  </div>
+  <div class="week-tabs" id="weekTabs"></div>
+  <div id="weeklyDispatchTable"></div>
+</div>
+
+<!-- ─── TAB: 직원 관리 ─── -->
+<div class="tab-content" id="tab-content-employees">
+  <div class="top-bar">
+    <span class="top-bar-title">직원 관리</span>
+    <button class="btn btn-primary" onclick="openAddEmployee()">➕ 직원 추가</button>
+  </div>
+  <div id="employeeTable"></div>
+</div>
+
+<!-- ─── TAB: 차량 관리 ─── -->
+<div class="tab-content" id="tab-content-vehicles">
+  <div class="top-bar">
+    <span class="top-bar-title">차량 관리</span>
+  </div>
+  <div id="vehicleTable"></div>
+</div>
+
+<!-- ─── TAB: 설정 ─── -->
+<div class="tab-content" id="tab-content-settings">
+  <div class="settings-section">
+    <div class="section-title">⚙️ 로테이션 기준 설정</div>
+    <div class="alert alert-info">🔔 <b>로테이션 기준일</b>과 <b>그 날의 차량 순번 배열</b>을 설정하면 모든 날짜의 순번이 자동 계산됩니다.<br>매일 차량이 세 칸씩 <b>내려가는(순번 증가)</b> 방식으로 순환합니다.</div>
+    <div class="form-group">
+      <label class="form-label">기준일 (이 날짜의 순번 배열을 아래에서 설정)</label>
+      <input type="date" class="form-control" id="baseDateInput" style="max-width:200px;">
+    </div>
+    <div class="section-title" style="margin-top:16px;">기준일 순번별 차량 배정</div>
+    <div class="rotation-grid" id="rotationGrid"></div>
+    <div style="margin-top:12px;display:flex;gap:10px;">
+      <button class="btn btn-primary" onclick="saveSettings()">💾 설정 저장</button>
+      <button class="btn btn-warning" onclick="resetToDefault()">↩️ 기본값으로 초기화</button>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="section-title">📁 데이터 관리</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn btn-info" onclick="exportAllData()">📤 전체 데이터 내보내기</button>
+      <button class="btn btn-warning" onclick="importData()">📥 데이터 불러오기</button>
+      <button class="btn btn-danger" onclick="clearAllData()">🗑️ 전체 초기화</button>
+      <input type="file" id="importFile" accept=".json" style="display:none;" onchange="handleImport(event)">
+    </div>
+  </div>
+</div>
+
+<!-- ─── 규칙/지침서 ─── -->
+<div class="tab-content" id="tab-content-guide">
+  <div style="max-width:900px;margin:0 auto;">
+    <h2 style="color:#1a3a6b;border-bottom:3px solid #1a3a6b;padding-bottom:10px;margin-bottom:20px;">M5121 배차 관리 시스템 — 규칙 및 지침서</h2>
+
+    <div style="background:#e8f4ff;border:1px solid #b0d0f0;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <h3 style="color:#1a3a6b;margin-bottom:8px;">1. 운전자 구분</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:15px;">
+        <tr style="background:#1a3a6b;color:#fff;"><th style="padding:8px;border:1px solid #ccc;">구분</th><th style="padding:8px;border:1px solid #ccc;">설명</th><th style="padding:8px;border:1px solid #ccc;">차량</th></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:700;">고정운전자</td><td style="padding:8px;border:1px solid #ddd;">매일 정해진 차량을 운행하는 정규 운전자 (오전/오후 교대, 페어와 같은 차량 공유)</td><td style="padding:8px;border:1px solid #ddd;">차량번호 배정 (예: 3727) 또는 없음 (페어)</td></tr>
+        <tr style="background:#f8f8ff;"><td style="padding:8px;border:1px solid #ddd;font-weight:700;">SP (예비)</td><td style="padding:8px;border:1px solid #ddd;">고정 운전자 휴무/공휴일/휴무전일에 대체 투입되는 예비 운전자</td><td style="padding:8px;border:1px solid #ddd;">SP 또는 없음 (페어)</td></tr>
+      </table>
+      <ul style="margin-left:20px;line-height:2;margin-top:10px;">
+        <li><b>오전/오후 교대</b>: 각 운전자는 휴무일을 기준으로 오전↔오후가 자동 교대됨 (휴무일이 지날 때마다 토글)</li>
+        <li><b>페어</b>: 같은 차량을 공유하는 2인 1조 (오전조 + 오후조)</li>
+      </ul>
+    </div>
+
+    <div style="background:#fff8e0;border:1px solid #e0c800;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <h3 style="color:#7a6200;margin-bottom:8px;">2. 근무일수 계산 규칙</h3>
+      <p style="margin-bottom:8px;"><b>만근수</b> = 해당월 총 일수 - 휴무일 수 - 휴무전일 수 - 법정공휴일 수</p>
+      <ul style="margin-left:20px;line-height:2;">
+        <li><b>휴무일</b>: 각 운전자에게 지정된 요일 (예: 월요일 휴무자는 매주 월요일 쉼)</li>
+        <li><b>휴무요일(-1)</b>: 휴무일 전날의 요일 (예: 월요일 휴무자의 휴무전일 = 일요일). 직원관리에서 수정 가능</li>
+        <li><b>법정공휴일</b>: 신정, 삼일절, 어린이날, 현충일, 광복절, 개천절, 한글날, 성탄절 + 설/추석/부처님오신날</li>
+        <li><b>대체공휴일</b>: 법정공휴일이 주말과 겹칠 때 자동 지정 (예: 삼일절이 일요일이면 월요일 대체공휴일)</li>
+        <li style="color:#c70000;"><b>겹침 제외</b>: 휴무일·휴무전일·공휴일이 겹치는 경우 중복으로 빼지 않음 (1번만 차감)</li>
+        <li style="color:#7b1fa2;"><b>편도(수)는 근무일수에 포함하지 않음</b>: 총근무 = 정규 순번 배정일만 카운트 (수합은 별도 집계)</li>
+      </ul>
+      <div style="background:#fff;border:1px solid #ddd;border-radius:4px;padding:10px;margin-top:10px;">
+        <b>예시)</b> 3월(31일), 월요일 휴무자: 31 - 5(월) - 5(일) - 0(공휴일 겹침으로 추가차감 없음) = <b>21일</b><br>
+        <b>예시)</b> 3월(31일), 목요일 휴무자: 31 - 4(목) - 4(수) - 2(3/1삼일절, 3/2대체공휴일) = <b>21일</b>
+      </div>
+    </div>
+
+    <div style="background:#e8ffe8;border:1px solid #78c48a;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <h3 style="color:#155724;margin-bottom:8px;">3. 자동배치 규칙 (배치 순서)</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:15px;">
+        <tr style="background:#1e7e34;color:#fff;"><th style="padding:8px;border:1px solid #ccc;">단계</th><th style="padding:8px;border:1px solid #ccc;">내용</th><th style="padding:8px;border:1px solid #ccc;">핵심 규칙</th></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:700;width:80px;">0단계</td><td style="padding:8px;border:1px solid #ddd;">편도(수) 선배치</td><td style="padding:8px;border:1px solid #ddd;">평일(월~금) 매일 <b>반드시 2명</b> 배정, <b>1인당 월 최대 3회</b><br>후보: 고정+SP 전체 운전자 — 휴무 요일 무관<br><b>1차: 수합횟수 적은 순</b>, 2차: 쉬는날 우선 (휴무전일 &gt; 휴무일 &gt; 공휴일)<br>휴무전일+다음날 수합 동시 배정 방지 (무휴식 방지)</td></tr>
+        <tr style="background:#f0fff0;"><td style="padding:8px;border:1px solid #ddd;font-weight:700;">1단계</td><td style="padding:8px;border:1px solid #ddd;">고정운전자 배치</td><td style="padding:8px;border:1px solid #ddd;">정규근무 상한 = 만근수 (수합 제외)<br><b>Pass 1</b>: 휴무일·휴무전일·공휴일 제외, 주별 균등 배분 (ceil)<br><b>Pass 2</b>: 부족 시 <b>평일</b>(토/일/공휴일 제외)에 추가 배치<br>토 10대, 일/공휴일 8대 순번 제한, 주 5~6일 교차 제한</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:700;">1-c단계</td><td style="padding:8px;border:1px solid #ddd;">순번 초과 빈자리</td><td style="padding:8px;border:1px solid #ddd;">토/일/공휴일에 순번 제한(10/8대)으로 빈 운전자 → 빈 순번에 추가 배치<br>같은 주별 균등 배분 + 주 교차 제한 적용</td></tr>
+        <tr style="background:#f0fff0;"><td style="padding:8px;border:1px solid #ddd;font-weight:700;">2단계</td><td style="padding:8px;border:1px solid #ddd;">SP 대체 배치</td><td style="padding:8px;border:1px solid #ddd;">고정운전자 공석(휴무/휴무전일/공휴일/수합일) 순번에 SP 투입<br>SP 만근+2 이내, 주 5~6일 교차 제한<br><b>만근 대비 부족율 높은 SP 우선</b> (균등 배분)</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:700;">3단계</td><td style="padding:8px;border:1px solid #ddd;">초과 해소 + SP 백필</td><td style="padding:8px;border:1px solid #ddd;">고정운전자 초과분 마지막 배정일부터 제거<br>빈 순번은 SP가 대체 투입 (부족율 높은 SP 우선)</td></tr>
+        <tr style="background:#f0fff0;"><td style="padding:8px;border:1px solid #ddd;font-weight:700;">4단계</td><td style="padding:8px;border:1px solid #ddd;">SP 밸런스</td><td style="padding:8px;border:1px solid #ddd;">초과 SP에서 부족 SP로 근무 이동<br>모든 SP가 최소 만근 달성하도록 재배분</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:700;">5단계</td><td style="padding:8px;border:1px solid #ddd;">주말/공휴일 정원 보장</td><td style="padding:8px;border:1px solid #ddd;">토 10대, 일/공휴일 8대 정원을 강제 보장 (3단계 필링)<br>1차: 휴무일 제외+주제한, 2차: 휴무일 허용, 3차: 주제한 완화</td></tr>
+        <tr style="background:#f0fff0;"><td style="padding:8px;border:1px solid #ddd;font-weight:700;">6단계</td><td style="padding:8px;border:1px solid #ddd;">평일 정원 보장</td><td style="padding:8px;border:1px solid #ddd;">평일 오전/오후 각 16대 정원을 역순으로 보장<br>빈 순번에 가용 운전자 투입</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:700;">7~8단계</td><td style="padding:8px;border:1px solid #ddd;">부족 운전자 재배분</td><td style="padding:8px;border:1px solid #ddd;">만근 미달 운전자에게 빈 순번 추가 배정 (7: over&lt;0, 8: over&lt;1)<br>무휴식 방지(preDayOff+수합) 체크 적용</td></tr>
+        <tr style="background:#f0fff0;"><td style="padding:8px;border:1px solid #ddd;font-weight:700;">9단계</td><td style="padding:8px;border:1px solid #ddd;">최종 정원 보장</td><td style="padding:8px;border:1px solid #ddd;">7~8단계 재배분 후 다시 정원 체크 (역순+정순)<br>모든 날짜가 정원(평일16/토10/일8)을 충족하도록 마무리</td></tr>
+      </table>
+    </div>
+
+    <div style="background:#fff0f0;border:1px solid #f5c2c7;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <h3 style="color:#842029;margin-bottom:8px;">4. 근무 제한 규칙</h3>
+      <ul style="margin-left:20px;line-height:2.2;">
+        <li><b>주 5~6일 교차 제한</b>: 한 주에 6일 근무 → 다음 주 최대 5일 / 5일 이하 근무 → 다음 주 최대 6일</li>
+        <li><b>고정운전자 만근 달성</b>: 정규근무(수 제외) = 만근수 정확히 달성. 부족 시 휴무전일/공휴일에 추가 배치</li>
+        <li><b>SP 만근+2</b>: SP는 정규근무(수 제외) 기준 만근+2일까지 근무 가능<br>
+          <b>SP 밸런스</b>: 초과 SP와 부족 SP 간 근무를 이동하여 균등 분배</li>
+        <li><b>편도(수) 월 3회</b>: 고정+SP 전원 1인당 월 최대 3회. 자동배치 및 수동 배치 시 3회 초과 방지</li>
+        <li><b>편도(수)는 근무일수 미포함</b>: 수합은 총근무·초과·주간근무일수에 카운트하지 않음</li>
+        <li><b>시간대별 대체 규칙</b>: AM공석 → AM 운전자만 대체 가능 / PM공석 → AM+PM 모두 대체 가능<br>
+          AM 운전자가 PM공석을 채울 경우, 해당 날의 시간대가 PM으로 오버라이드됨</li>
+        <li><b>대체 가능 조건</b>: 정규근무(수 제외) &lt; 만근+2 이내인 운전자만 근무가능(초록) 표시</li>
+        <li><b>무휴식 방지</b>: 휴무전일 근무 + 휴무일에 수합 배정 = 실질 무휴식 상태가 되는 조합을 자동 차단</li>
+      </ul>
+    </div>
+
+    <div style="background:#f0f0ff;border:1px solid #b0b0e0;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <h3 style="color:#333399;margin-bottom:8px;">5. 차량 로테이션 규칙</h3>
+      <ul style="margin-left:20px;line-height:2.2;">
+        <li><b>16대 로테이션</b>: 차량 16대가 매일 순번이 3칸씩 순환 (순번 증가 방향)</li>
+        <li><b>평일</b>: 16대 전부 운행 (순번 1~16)</li>
+        <li><b>토요일</b>: 10대 운행 (순번 1~10, 나머지 미운행)</li>
+        <li><b>일요일/공휴일</b>: 8대 운행 (순번 1~8, 나머지 미운행)</li>
+        <li><b>기준일 설정</b>: 설정 탭에서 기준일과 해당일의 차량 순번 배열을 지정하면 전체 달력이 자동 계산</li>
+        <li><b>자동 채움</b>: 설정에서 한 순번의 차량을 변경하면 나머지 15개가 순서에 맞게 자동으로 채워짐 (개별 수정도 가능)</li>
+      </ul>
+    </div>
+
+    <div style="background:#f5f0ff;border:1px solid #c0b0e0;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <h3 style="color:#6a1a8b;margin-bottom:8px;">6. 편도(수합) 운행 규칙</h3>
+      <ul style="margin-left:20px;line-height:2.2;">
+        <li><b>운행일</b>: 월~금 평일 매일 <b>반드시 2명</b> (토/일/공휴일 제외)</li>
+        <li><b>차량</b>: 6005호, 3511호 (2대)</li>
+        <li><b>월 제한</b>: 1인당 월 최대 3회</li>
+        <li><b>배정 대상</b>: 고정+SP 전체 운전자 — 휴무 요일과 무관하게 전원 참여</li>
+        <li><b>배정 우선순위</b>: 1차 수합횟수 적은 순 (균등 분배), 2차 쉬는날 우선 (휴무전일 &gt; 휴무일 &gt; 공휴일)</li>
+        <li><b>근무일수 미포함</b>: 수합은 총근무·초과·주간근무일수에 카운트하지 않음 (별도 '수' 열로 집계)</li>
+        <li><b>운행 시각</b>: 6005호(05:20/07:46), 3511호(05:40/08:05) — 오전만 운행</li>
+      </ul>
+    </div>
+
+    <div style="background:#e0f0ff;border:1px solid #a0c8e8;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <h3 style="color:#0d6efd;margin-bottom:8px;">7. 월간 근무표 보는 법</h3>
+      <ul style="margin-left:20px;line-height:2.2;">
+        <li><b>숫자 (1~16)</b>: 해당일 차량 순번 (차량 로테이션에 의해 자동 결정)</li>
+        <li style="color:#7b1fa2;"><b>"수" (보라색)</b>: 편도(수합) 배정일 — 보라색 배경, 보라색 테두리</li>
+        <li><b>빈 칸</b>: 미배정 (휴무일/휴무전일/공휴일/운행 순번 초과)</li>
+        <li style="color:#dc3545;"><b>빨간 배경</b>: 수동으로 삭제한 공석 — 클릭하면 대체 가능 운전자 목록 표시</li>
+        <li style="color:#28a745;"><b>초록 배경</b>: 해당 날 공석을 대체할 수 있는 운전자 — 클릭하면 배치할 공석 목록 표시<br>
+          AM공석에는 AM 운전자만, PM공석에는 AM+PM 모두 초록으로 표시됨</li>
+        <li style="color:#7a6000;"><b>노란 배경</b>: 개인 휴무일 또는 휴무전일</li>
+        <li><b>주황 배경</b>: 법정공휴일</li>
+        <li><b>연노란 밑줄</b>: 메모가 있는 셀</li>
+        <li style="color:#dc3545;"><b>날짜 빨간 표시</b>: 해당 날짜의 오전 또는 오후 인원이 정원(평일16/토10/일8)과 다를 때 날짜 헤더와 하단 집계 셀이 빨간색으로 표시</li>
+        <li><b>하단 집계</b>: 오전/오후/편도(수) 일별 인원 합계. 정원과 다르면 빨간색 배경</li>
+        <li><b>우측 통계</b>: 총근무(수 제외), 수합횟수, 만근수, 초과일수</li>
+      </ul>
+    </div>
+
+    <div style="background:#fff8e8;border:1px solid #e0c080;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <h3 style="color:#b05000;margin-bottom:8px;">8. 수동 배치/수정 방법</h3>
+      <ul style="margin-left:20px;line-height:2.2;">
+        <li><b>일반 셀 클릭</b>: 순번 1~16 버튼으로 값 설정, 수(편도) 배치, 삭제(공란) 처리, 메모 입력 가능</li>
+        <li><b>빨간 셀(공석) 클릭</b>: 해당 공석을 채울 수 있는 운전자 목록 표시 → 선택하면 즉시 배치</li>
+        <li><b>초록 셀(대체가능) 클릭</b>: 이 운전자를 배치할 수 있는 공석 목록 표시 → 선택하면 즉시 배치<br>
+          수합(수) 공석 선택 시 '수'로 배치됨</li>
+        <li><b>셀 삭제 후 재선택</b>: 삭제된 셀의 원래 운전자도 후보 목록에 <span style="background:#9c27b0;color:#fff;padding:1px 6px;border-radius:8px;font-size:12px;">기존</span> 표시와 함께 나타남</li>
+        <li><b>AM→PM 오버라이드</b>: AM 운전자가 PM공석을 채우면 해당 날의 시간대가 PM으로 자동 오버라이드. 실행취소 시 원래 시간대로 복구</li>
+        <li><b>드래그 선택</b>: 여러 날을 드래그하여 한번에 결근/병가/초기화 처리</li>
+        <li><b>실행 취소</b>: Ctrl+Z 또는 하단 "실행 취소" 버튼 (100단계까지 기록)</li>
+      </ul>
+    </div>
+
+    <div style="background:#f0f8ff;border:1px solid #b0c8e0;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <h3 style="color:#1a5276;margin-bottom:8px;">9. 직원 관리</h3>
+      <ul style="margin-left:20px;line-height:2.2;">
+        <li><b>직원 추가</b>: 성명, 차량번호, 휴무요일, 휴무전일, 표시번호(seq), 특이사항 입력</li>
+        <li><b>표시 번호(seq)</b>: 직원의 표시 순서를 결정하는 번호. 변경하면 월간근무표의 위치가 이동됨</li>
+        <li><b>비활성화</b>: 직원을 비활성화하면 자동배치에서 제외되고, 직원관리 하단에 회색으로 표시됨</li>
+        <li><b>재활성화</b>: 비활성 직원을 다시 활성화하여 배치 대상에 포함</li>
+        <li><b>완전 삭제</b>: 비활성 직원을 영구 삭제 (되돌릴 수 없음)</li>
+        <li><b>시간대 자동 결정</b>: 차량번호 있으면 오전조, 없으면(페어) 오후조로 자동 설정</li>
+      </ul>
+    </div>
+
+    <div style="background:#fff5f0;border:1px solid #e0b090;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <h3 style="color:#b05000;margin-bottom:8px;">10. 차량 관리</h3>
+      <ul style="margin-left:20px;line-height:2.2;">
+        <li><b>차량 목록</b>: 16대 차량의 순번, 차량번호, 배정운전자1(오전), 배정운전자2(오후) 확인</li>
+        <li><b>차량번호 수정</b>: 수정 버튼 클릭 → 차량번호 변경 가능. 변경 시 해당 차량에 배정된 운전자들의 차량번호도 자동 연동</li>
+        <li><b>운전자 배정</b>: 드롭다운으로 각 차량에 오전/오후 운전자 배정. 다른 차량에 이미 배정된 운전자 선택 시 자동 해제 후 재배정</li>
+        <li><b>편도(수) 차량</b>: 6005호, 3511호 — 별도 표시 (배정 변경 불가)</li>
+      </ul>
+    </div>
+
+    <div style="background:#e8f8e8;border:1px solid #a0d0a0;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <h3 style="color:#155724;margin-bottom:8px;">11. 내보내기 기능</h3>
+      <ul style="margin-left:20px;line-height:2.2;">
+        <li><b>엑셀 내보내기</b>: 월간 근무표를 .xlsx 파일로 저장</li>
+        <li><b>주배차 엑셀</b>: 주간 배차표를 주차별 시트로 저장</li>
+        <li><b>이미지 내보내기</b>: 특정 일자 배차표를 PNG 이미지로 저장</li>
+        <li><b>전체 이미지 ZIP</b>: 해당 월 모든 일자 배차표를 ZIP으로 저장</li>
+        <li><b>데이터 내보내기/불러오기</b>: JSON 형식으로 전체 데이터 백업/복원</li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+<!-- ─── FOOTER ─── -->
+<div class="app-footer">
+  <button class="btn btn-primary" onclick="saveAll()">💾 저장</button>
+  <button class="btn btn-success" onclick="exportExcel()">📥 엑셀 내보내기</button>
+  <button class="btn btn-info" onclick="exportCurrentDayImage()">📸 오늘 배차 이미지</button>
+  <button class="btn btn-light" onclick="undoAction()" id="undoBtn2" disabled>↩️ 실행취소</button>
+  <span style="margin-left:auto;font-size:14px;color:#666;" id="saveStatus">자동 저장 완료</span>
+</div>
+
+<!-- ═══════════════ CELL EDIT MODAL ═══════════════ -->
+<div class="modal-bg" id="cellModal">
+  <div class="modal-box">
+    <span class="modal-close" onclick="closeModal('cellModal')">✕</span>
+    <div class="modal-title" id="cellModalTitle">순번 입력</div>
+    <div class="modal-ctx" id="cellModalCtx"></div>
+    <div style="font-weight:700;margin-bottom:6px;font-size:13px;">순번 선택 (이번 주 표시: 1~6)</div>
+    <div class="seq-grid" id="seqGrid"></div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="seq-btn sp-btn" style="width:auto;padding:10px 16px;height:auto;font-size:14px;" onclick="setCell('수',event)">수 (수요운행)</button>
+      <button class="seq-btn clear-btn" style="width:auto;padding:10px 16px;height:auto;font-size:14px;" onclick="setCell(null,event)">삭제 (공란)</button>
+    </div>
+    <div style="margin-top:12px;">
+      <label class="form-label">특이사항 메모</label>
+      <input type="text" class="note-input" id="cellNoteInput" placeholder="병가, 결근, 교체 등 메모">
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeModal('cellModal')">취소</button>
+      <button class="btn btn-primary" onclick="saveCell()">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ EMPLOYEE EDIT MODAL ═══════════════ -->
+<div class="modal-bg" id="empModal">
+  <div class="modal-box">
+    <span class="modal-close" onclick="closeModal('empModal')">✕</span>
+    <div class="modal-title" id="empModalTitle">직원 추가/수정</div>
+    <input type="hidden" id="empId">
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;">
+      <div class="form-group">
+        <label class="form-label">표시 번호</label>
+        <input type="number" class="form-control" id="empSeq" min="1" placeholder="번호">
+      </div>
+      <div class="form-group">
+        <label class="form-label">성명 *</label>
+        <input type="text" class="form-control" id="empName" placeholder="이름 입력">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+      <div class="form-group">
+        <label class="form-label">배정 차량번호</label>
+        <input type="text" class="form-control" id="empVehicle" placeholder="예: 3727, SP, 없음">
+      </div>
+      <div class="form-group">
+        <label class="form-label">휴무요일 *</label>
+        <select class="form-select" id="empDayOff" onchange="autoFillPreDayOff()">
+          <option>월</option><option>화</option><option>수</option>
+          <option>목</option><option>금</option><option>토</option><option>일</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">휴무요일(-1) *</label>
+        <select class="form-select" id="empPreDayOff">
+          <option>월</option><option>화</option><option>수</option>
+          <option>목</option><option>금</option><option>토</option><option>일</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">특이사항</label>
+      <input type="text" class="form-control" id="empNote" placeholder="예: 오후조 5개만, 병가 등">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-secondary" onclick="closeModal('empModal')">취소</button>
+      <button class="btn btn-primary" onclick="saveEmployee()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ RANGE ACTION MODAL ═══════════════ -->
+<div class="modal-bg" id="rangeModal">
+  <div class="modal-box">
+    <span class="modal-close" onclick="closeModal('rangeModal')">✕</span>
+    <div class="modal-title">범위 일괄 처리</div>
+    <div class="modal-ctx" id="rangeCtx"></div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px;">
+      <button class="btn btn-danger" onclick="rangeAction('결근')">🔴 결근 처리 (공란 + 메모)</button>
+      <button class="btn btn-warning" onclick="rangeAction('병가')">🟡 병가 처리 (공란 + 메모)</button>
+      <button class="btn btn-secondary" onclick="rangeAction('clear')">⬜ 공란 초기화</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ CONFIRM MODAL ═══════════════ -->
+<div class="modal-bg" id="confirmModal">
+  <div class="modal-box" style="max-width:380px;">
+    <div class="modal-title" id="confirmTitle">확인</div>
+    <div id="confirmMsg" style="margin-bottom:18px;font-size:14px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeModal('confirmModal')">취소</button>
+      <button class="btn btn-danger" id="confirmOkBtn">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ VEHICLE EDIT MODAL ═══════════════ -->
+<div class="modal-bg" id="vehEditModal">
+  <div class="modal-box" style="max-width:380px;">
+    <span class="modal-close" onclick="closeModal('vehEditModal')">✕</span>
+    <div class="modal-title" id="vehEditTitle">차량번호 수정</div>
+    <input type="hidden" id="vehEditIdx">
+    <div class="form-group">
+      <label class="form-label">차량번호</label>
+      <input type="text" class="form-control" id="vehEditNum" placeholder="차량번호 입력">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-secondary" onclick="closeModal('vehEditModal')">취소</button>
+      <button class="btn btn-primary" onclick="saveVehicleEdit()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 배치 모달 (빨간/초록 셀 클릭 시) -->
+<div class="modal-bg" id="assignModal">
+  <div class="modal-box">
+    <span class="modal-close" onclick="closeModal('assignModal')">&times;</span>
+    <div class="modal-title" id="assignModalTitle"></div>
+    <div class="modal-ctx" id="assignModalCtx"></div>
+    <div id="assignModalList" style="max-height:50vh;overflow-y:auto;"></div>
+  </div>
+</div>
+
+
+<script>
+// ═══════════════════════════════════════════════════
+//  Firebase 초기화
+// ═══════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyCueopvklcG4MIiaKcFtMwcoo0pCvjHudk",
+  authDomain: "m5121-55603.firebaseapp.com",
+  databaseURL: "https://m5121-55603-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "m5121-55603",
+  storageBucket: "m5121-55603.firebasestorage.app",
+  messagingSenderId: "641365889110",
+  appId: "1:641365889110:web:ba1ea370d0c4531ddf6bf7"
+};
+firebase.initializeApp(firebaseConfig);
+const fbDb = firebase.database();
+
+// ═══════════════════════════════════════════════════
+//  데이터 상수
+// ═══════════════════════════════════════════════════
+const DEFAULT_DRIVERS = [
+  {id:1,  name:'한민수', vehicle:'3727', dayOff:'월', preDayOff:'일', shift:'오전', note:'', active:true},
+  {id:2,  name:'김용준', vehicle:'3727', dayOff:'월', preDayOff:'일', shift:'오후', note:'', active:true},
+  {id:3,  name:'박산우', vehicle:'3529', dayOff:'월', preDayOff:'일', shift:'오전', note:'', active:true},
+  {id:4,  name:'이충호', vehicle:'3529', dayOff:'월', preDayOff:'일', shift:'오후', note:'', active:true},
+  {id:5,  name:'김형수', vehicle:'3528', dayOff:'화', preDayOff:'월', shift:'오전', note:'', active:true},
+  {id:6,  name:'김정구', vehicle:'3528', dayOff:'화', preDayOff:'월', shift:'오후', note:'', active:true},
+  {id:7,  name:'박영민', vehicle:'3351', dayOff:'수', preDayOff:'화', shift:'오전', note:'', active:true},
+  {id:8,  name:'김용석', vehicle:'3351', dayOff:'수', preDayOff:'화', shift:'오후', note:'', active:true},
+  {id:9,  name:'김상수', vehicle:'3523', dayOff:'목', preDayOff:'수', shift:'오전', note:'', active:true},
+  {id:10, name:'유병호', vehicle:'3523', dayOff:'목', preDayOff:'수', shift:'오후', note:'', active:true},
+  {id:11, name:'박시원', vehicle:'3710', dayOff:'금', preDayOff:'목', shift:'오전', note:'', active:true},
+  {id:12, name:'강현석', vehicle:'3710', dayOff:'금', preDayOff:'목', shift:'오후', note:'', active:true},
+  {id:13, name:'천성원', vehicle:'3726', dayOff:'토', preDayOff:'금', shift:'오전', note:'', active:true},
+  {id:14, name:'윤형주', vehicle:'3726', dayOff:'토', preDayOff:'금', shift:'오후', note:'', active:true},
+  {id:15, name:'신동성', vehicle:'3700', dayOff:'토', preDayOff:'금', shift:'오전', note:'', active:true},
+  {id:16, name:'박은준', vehicle:'3700', dayOff:'토', preDayOff:'금', shift:'오후', note:'', active:true},
+  {id:17, name:'허상구', vehicle:'3709', dayOff:'토', preDayOff:'금', shift:'오전', note:'', active:true},
+  {id:18, name:'이용현', vehicle:'3709', dayOff:'토', preDayOff:'금', shift:'오후', note:'', active:true},
+  {id:19, name:'김명석', vehicle:'3713', dayOff:'토', preDayOff:'금', shift:'오전', note:'', active:true},
+  {id:20, name:'이희철', vehicle:'3713', dayOff:'토', preDayOff:'금', shift:'오후', note:'', active:true},
+  {id:21, name:'배재용', vehicle:'3350', dayOff:'일', preDayOff:'토', shift:'오전', note:'', active:true},
+  {id:22, name:'조찬희', vehicle:'3350', dayOff:'일', preDayOff:'토', shift:'오후', note:'', active:true},
+  {id:23, name:'이강녕', vehicle:'3521', dayOff:'일', preDayOff:'토', shift:'오전', note:'', active:true},
+  {id:24, name:'이건희', vehicle:'3521', dayOff:'일', preDayOff:'토', shift:'오후', note:'', active:true},
+  {id:25, name:'한인규', vehicle:'3524', dayOff:'일', preDayOff:'토', shift:'오전', note:'', active:true},
+  {id:26, name:'김우현', vehicle:'3524', dayOff:'일', preDayOff:'토', shift:'오후', note:'', active:true},
+  {id:27, name:'박용우', vehicle:'3341', dayOff:'일', preDayOff:'토', shift:'오전', note:'', active:true},
+  {id:28, name:'이성형', vehicle:'3341', dayOff:'일', preDayOff:'토', shift:'오후', note:'', active:true},
+  {id:29, name:'조윤재', vehicle:'3729', dayOff:'일', preDayOff:'토', shift:'오전', note:'', active:true},
+  {id:30, name:'최경남', vehicle:'3729', dayOff:'일', preDayOff:'토', shift:'오후', note:'', active:true},
+  {id:31, name:'정세훈', vehicle:'3711', dayOff:'일', preDayOff:'토', shift:'오전', note:'', active:true},
+  {id:32, name:'지성훈', vehicle:'3711', dayOff:'일', preDayOff:'토', shift:'오후', note:'', active:true},
+  {id:33, name:'이정완', vehicle:'SP',   dayOff:'수', preDayOff:'화', shift:'오전', note:'', active:true},
+  {id:34, name:'김선문', vehicle:'',     dayOff:'토', preDayOff:'금', shift:'오후', note:'', active:true},
+  {id:35, name:'서선원', vehicle:'SP',   dayOff:'토', preDayOff:'금', shift:'오전', note:'', active:true},
+  {id:36, name:'최활수', vehicle:'',     dayOff:'일', preDayOff:'토', shift:'오후', note:'', active:true},
+  {id:37, name:'조성기', vehicle:'SP',   dayOff:'일', preDayOff:'토', shift:'오전', note:'', active:true},
+  {id:38, name:'조유미', vehicle:'',     dayOff:'목', preDayOff:'수', shift:'오후', note:'', active:true},
+  {id:39, name:'문덕원', vehicle:'SP',   dayOff:'일', preDayOff:'토', shift:'오전', note:'', active:true},
+];
+
+// 기본 차량 순서 (16대, 위치1=인덱스0)
+const DEFAULT_BASE_VEHICLES = ['3341','3350','3351','3521','3523','3524','3528','3529','3700','3709','3710','3711','3713','3726','3727','3729'];
+
+// 평일 오전 편도(수) 차량 — 월~금 매일 운행, 휴일근무자 운용
+const WED_VEHICLES = [{num:'6005',am1:'05:20',am2:'07:46'},{num:'3511',am1:'05:40',am2:'08:05'}];
+
+// 운행 시각표 (순번 1~16)
+const SCHEDULE_TIMES = [
+  {seq:1, am1:'05:10',am2:'07:55',pm1:'11:50',pm2:'16:25',pm3:'20:33'},
+  {seq:2, am1:'05:30',am2:'08:20',pm1:'12:10',pm2:'16:34',pm3:'20:45'},
+  {seq:3, am1:'05:50',am2:'08:40',pm1:'12:30',pm2:'16:43',pm3:'21:00'},
+  {seq:4, am1:'06:00',am2:'09:00',pm1:'12:45',pm2:'16:52',pm3:'21:12'},
+  {seq:5, am1:'06:10',am2:'09:20',pm1:'13:00',pm2:'17:01',pm3:'21:24'},
+  {seq:6, am1:'06:20',am2:'09:36',pm1:'13:15',pm2:'17:11',pm3:'21:36'},
+  {seq:7, am1:'06:30',am2:'09:48',pm1:'13:30',pm2:'17:22',pm3:'21:48'},
+  {seq:8, am1:'06:38',am2:'10:00',pm1:'13:45',pm2:'17:34',pm3:'22:00'},
+  {seq:9, am1:'06:46',am2:'10:12',pm1:'14:00',pm2:'17:46',pm3:'22:12'},
+  {seq:10,am1:'06:54',am2:'10:24',pm1:'14:15',pm2:'17:59',pm3:'22:25'},
+  {seq:11,am1:'07:01',am2:'10:36',pm1:'14:30',pm2:'18:20',pm3:'22:40'},
+  {seq:12,am1:'07:08',am2:'10:48',pm1:'14:45',pm2:'18:40',pm3:null},
+  {seq:13,am1:'07:15',am2:'11:00',pm1:'15:00',pm2:'18:55',pm3:null},
+  {seq:14,am1:'07:22',am2:'11:12',pm1:'15:30',pm2:'19:25',pm3:null},
+  {seq:15,am1:'07:30',am2:'11:24',pm1:'16:00',pm2:'19:55',pm3:null},
+  {seq:16,am1:'07:38',am2:'11:36',pm1:'16:14',pm2:'20:19',pm3:null},
+];
+// 토요일 시간표 (10대)
+const SCHEDULE_TIMES_SAT = [
+  {seq:1, am1:'05:10',am2:'08:30',pm1:'12:10',pm2:'16:10',pm3:'20:20'},
+  {seq:2, am1:'05:30',am2:'08:50',pm1:'12:30',pm2:'16:35',pm3:'20:40'},
+  {seq:3, am1:'05:50',am2:'09:10',pm1:'12:50',pm2:'17:00',pm3:'21:00'},
+  {seq:4, am1:'06:10',am2:'09:35',pm1:'13:15',pm2:'17:25',pm3:'21:25'},
+  {seq:5, am1:'06:30',am2:'10:00',pm1:'13:40',pm2:'17:50',pm3:'21:50'},
+  {seq:6, am1:'06:50',am2:'10:25',pm1:'14:05',pm2:'18:15',pm3:'22:15'},
+  {seq:7, am1:'07:10',am2:'10:50',pm1:'14:30',pm2:'18:40',pm3:'22:40'},
+  {seq:8, am1:'07:30',am2:'11:10',pm1:'14:55',pm2:'19:05',pm3:null},
+  {seq:9, am1:'07:50',am2:'11:30',pm1:'15:20',pm2:'19:30',pm3:null},
+  {seq:10,am1:'08:10',am2:'11:50',pm1:'15:45',pm2:'19:55',pm3:null},
+];
+// 일요일/공휴일 시간표 (8대)
+const SCHEDULE_TIMES_SUN = [
+  {seq:1, am1:'05:10',am2:'08:30',pm1:'12:00',pm2:'16:00',pm3:'20:00'},
+  {seq:2, am1:'05:35',am2:'08:55',pm1:'12:30',pm2:'16:30',pm3:'20:30'},
+  {seq:3, am1:'06:00',am2:'09:20',pm1:'13:00',pm2:'17:00',pm3:'21:00'},
+  {seq:4, am1:'06:25',am2:'09:45',pm1:'13:30',pm2:'17:30',pm3:'21:30'},
+  {seq:5, am1:'06:50',am2:'10:10',pm1:'14:00',pm2:'18:00',pm3:'22:00'},
+  {seq:6, am1:'07:15',am2:'10:35',pm1:'14:30',pm2:'18:30',pm3:'22:40'},
+  {seq:7, am1:'07:40',am2:'11:00',pm1:'15:00',pm2:'19:00',pm3:null},
+  {seq:8, am1:'08:05',am2:'11:30',pm1:'15:30',pm2:'19:30',pm3:null},
+];
+const EMPTY_TIMES = {am1:'-',am2:'-',pm1:'-',pm2:'-',pm3:null};
+function getScheduleTimes(y,m,d){
+  if(isSun(y,m,d)||isHoliday(y,m,d)) return SCHEDULE_TIMES_SUN;
+  if(isSat(y,m,d)) return SCHEDULE_TIMES_SAT;
+  return SCHEDULE_TIMES;
+}
+
+// 회사 만근 기준
+const COMPANY_FULLWORK = {월:21,화:20,수:20,목:21,금:21,토:21,일:21};
+const SP_FULLWORK = 21; // SP 운전자는 요일 무관 만근 21
+
+// 요일별 최대 운행 순번 (토:10대, 일/공휴일:8대, 평일:16대)
+function maxSeqForDay(y,m,d){
+  // 공휴일 체크를 토요일보다 먼저 (토요일 공휴일 → 8대, 일반 토요일 → 10대)
+  if(isHoliday(y,m,d)) return 8;
+  if(isSat(y,m,d)) return 10;
+  if(isSun(y,m,d)) return 8;
+  return 16;
+}
+
+const DAYNAMES = ['일','월','화','수','목','금','토'];
+// ── 공휴일 (고정 + 음력 하드코딩) ──
+const LUNAR_HOLIDAYS = {
+  2025:['2025-01-28','2025-01-29','2025-01-30','2025-05-05','2025-10-05','2025-10-06','2025-10-07'],
+  2026:['2026-02-16','2026-02-17','2026-02-18','2026-05-24','2026-09-24','2026-09-25','2026-09-26'],
+  2027:['2027-02-06','2027-02-07','2027-02-08','2027-05-13','2027-10-13','2027-10-14','2027-10-15'],
+};
+function getHolidays(y){
+  const s = new Set();
+  const fixed = ['01-01','03-01','05-05','06-06','08-15','10-03','10-09','12-25'];
+  fixed.forEach(d=>s.add(`${y}-${d}`));
+  (LUNAR_HOLIDAYS[y]||[]).forEach(d=>s.add(d));
+
+  // ── 대체공휴일 자동 계산 ──
+  // 대상: 삼일절, 어린이날, 광복절, 개천절, 한글날, 성탄절 (2023년 법개정)
+  const subEligibleFixed = ['03-01','05-05','08-15','10-03','10-09','12-25'];
+  subEligibleFixed.forEach(md=>{
+    const [mm,dd] = md.split('-').map(Number);
+    const dt = new Date(y, mm-1, dd);
+    const dow = dt.getDay(); // 0=Sun, 6=Sat
+    if(dow===0||dow===6){
+      const next = new Date(dt);
+      next.setDate(next.getDate() + (dow===0?1:2)); // Sun→Mon, Sat→Mon
+      let nk = `${y}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`;
+      while(s.has(nk)){ next.setDate(next.getDate()+1); nk=`${y}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`; }
+      s.add(nk);
+    }
+  });
+  // 설/추석 3일 중 일요일에 걸리면 대체공휴일
+  const lunarDates = (LUNAR_HOLIDAYS[y]||[]);
+  const seolChuseok = lunarDates.filter(d=>{
+    // 설(1~2월)/추석(9~10월) 3일 연휴만 — 부처님오신날(5월) 제외
+    const mm = parseInt(d.split('-')[1]);
+    return mm<=3 || mm>=8;
+  });
+  seolChuseok.forEach(d=>{
+    const [yy,mm,dd] = d.split('-').map(Number);
+    const dt = new Date(yy, mm-1, dd);
+    if(dt.getDay()===0){ // 일요일
+      const dates = seolChuseok.map(x=>{const p=x.split('-').map(Number);return new Date(p[0],p[1]-1,p[2]);});
+      const lastDate = new Date(Math.max(...dates.filter(x=>Math.abs(x-dt)<4*86400000).map(x=>x.getTime())));
+      const next = new Date(lastDate); next.setDate(next.getDate()+1);
+      let nk = `${y}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`;
+      while(s.has(nk)){ next.setDate(next.getDate()+1); nk=`${y}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`; }
+      s.add(nk);
+    }
+  });
+  // 부처님오신날 대체공휴일 (음력 4/8, 주말이면 다음 평일)
+  const buddhaDate = lunarDates.find(d=>{
+    const mm = parseInt(d.split('-')[1]);
+    return mm>=4 && mm<=6; // 4~6월 중 음력 공휴일 = 부처님오신날
+  });
+  if(buddhaDate){
+    const [by,bm,bd] = buddhaDate.split('-').map(Number);
+    const bdt = new Date(by, bm-1, bd);
+    const bdow = bdt.getDay();
+    if(bdow===0||bdow===6){
+      const bnext = new Date(bdt);
+      bnext.setDate(bnext.getDate() + (bdow===0?1:2));
+      let bnk = `${y}-${String(bnext.getMonth()+1).padStart(2,'0')}-${String(bnext.getDate()).padStart(2,'0')}`;
+      while(s.has(bnk)){ bnext.setDate(bnext.getDate()+1); bnk=`${y}-${String(bnext.getMonth()+1).padStart(2,'0')}-${String(bnext.getDate()).padStart(2,'0')}`; }
+      s.add(bnk);
+    }
+  }
+  return s;
+}
+function isHoliday(y,m,d){
+  const k=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  return getHolidays(y).has(k);
+}
+
+// ═══════════════════════════════════════════════════
+//  앱 상태 (State)
+// ═══════════════════════════════════════════════════
+let S = {
+  year: 2026,
+  month: 2,
+  activeTab: 'monthly',
+  currentWeek: 1,
+  drivers: [],
+  baseDate: '2026-01-01',
+  baseOrder: [...DEFAULT_BASE_VEHICLES], // 기준일 순번1~16 차량
+  scheduleData: {}, // key: "YYYY-M" → {driverId: {day: value}}
+  notesData: {},    // key: "YYYY-M" → {driverId: {day: note}}
+  manuallyCleared: {}, // key: "YYYY-M" → {"driverId:day": true} — 수동 삭제 추적
+  shiftOverrides: {},  // key: "YYYY-M" → {"driverId:day": "PM"} — AM필러가 PM공석 채울 때 시간대 오버라이드
+  history: [],      // undo stack [{key, driverId, day, oldVal, oldNote}]
+  // cell edit state
+  editCell: null,   // {key, driverId, day}
+  // drag-select state
+  dragStart: null,
+  dragCells: [],
+};
+
+// ═══════════════════════════════════════════════════
+//  유틸리티 함수
+// ═══════════════════════════════════════════════════
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function daysInMonth(y,m){return new Date(y,m,0).getDate();}
+function dayOfWeek(y,m,d){return new Date(y,m-1,d).getDay();} // 0=일, 6=토
+function dayName(y,m,d){return DAYNAMES[dayOfWeek(y,m,d)];}
+function isSat(y,m,d){return dayOfWeek(y,m,d)===6;}
+function isSun(y,m,d){return dayOfWeek(y,m,d)===0;}
+function isWed(y,m,d){return dayOfWeek(y,m,d)===3;}
+
+// 기준일로부터 날짜의 오프셋 (일수)
+function dayOffset(y,m,d){
+  const base = new Date(S.baseDate);
+  const target = new Date(y,m-1,d);
+  return Math.round((target - base) / 86400000);
+}
+
+// 순번 pos(1~16) 에 해당하는 차량번호 (D일 오프셋, 하루 3칸 로테이션)
+function vehicleAtPos(pos, D){
+  const shift = ((D * 3) % 16 + 16) % 16;
+  const idx = ((pos - 1 - shift) % 16 + 16) % 16;
+  return S.baseOrder[idx];
+}
+
+// 차량번호 V의 D일 오프셋에서의 순번(1~16, 하루 3칸 로테이션)
+function posOfVehicle(vehicleNum, D){
+  const j = S.baseOrder.indexOf(vehicleNum);
+  if(j<0) return null;
+  const shift = ((D * 3) % 16 + 16) % 16;
+  return ((j + shift) % 16) + 1;
+}
+
+// 운전자의 해당일 근무 시간대 결정 (오전/오후 자동 교대)
+// 규칙: 휴무일을 지날 때마다 오전↔오후 토글
+// 오전조(shift='오전'): 첫 구간 PM → 휴무 후 AM → 휴무 후 PM → ...
+// 오후조(shift='오후'): 첫 구간 AM → 휴무 후 PM → 휴무 후 AM → ...
+function getShiftForDay(y, m, driverId, day){
+  // shiftOverrides 체크: AM필러가 PM공석을 채운 경우 해당 일의 시간대를 PM으로 오버라이드
+  const oKey = schedKey(y, m);
+  if(S.shiftOverrides[oKey]?.[driverId+':'+day]) return S.shiftOverrides[oKey][driverId+':'+day];
+  const dr = S.drivers.find(d=>d.id===driverId);
+  if(!dr) return 'AM';
+  const isFirst = dr.shift === '오전';
+  const dayOffIdx = DAYNAMES.indexOf(dr.dayOff);
+  if(dayOffIdx < 0) return isFirst ? 'AM' : 'PM';
+  // day 1 ~ day-1 중 휴무 요일 횟수 카운트
+  let toggleCount = 0;
+  for(let d=1; d<day; d++){
+    if(dayOfWeek(y,m,d) === dayOffIdx) toggleCount++;
+  }
+  if(isFirst){
+    return (toggleCount % 2 === 0) ? 'PM' : 'AM';
+  } else {
+    return (toggleCount % 2 === 0) ? 'AM' : 'PM';
+  }
+}
+
+function schedKey(y,m){return `${y}-${m}`;}
+function getSchedule(y,m){
+  const k = schedKey(y,m);
+  if(!S.scheduleData[k]) S.scheduleData[k]={};
+  return S.scheduleData[k];
+}
+function getNote(y,m){
+  const k = schedKey(y,m);
+  if(!S.notesData[k]) S.notesData[k]={};
+  return S.notesData[k];
+}
+function getCellVal(y,m,driverId,day){
+  const sc = getSchedule(y,m);
+  if(!sc[driverId]) return null;
+  return sc[driverId][day] !== undefined ? sc[driverId][day] : null;
+}
+function setCellVal(y,m,driverId,day,val){
+  const sc = getSchedule(y,m);
+  if(!sc[driverId]) sc[driverId]={};
+  sc[driverId][day] = val;
+}
+function getCellNote(y,m,driverId,day){
+  const nt = getNote(y,m);
+  if(!nt[driverId]) return '';
+  return nt[driverId][day] || '';
+}
+function setCellNote(y,m,driverId,day,note){
+  const nt = getNote(y,m);
+  if(!nt[driverId]) nt[driverId]={};
+  nt[driverId][day] = note;
+}
+
+// 수동 삭제 추적 헬퍼 (원래 값 저장: true=순번, '수'=수합)
+function markCleared(y,m,driverId,day,origVal){ const k=schedKey(y,m); if(!S.manuallyCleared[k]) S.manuallyCleared[k]={}; S.manuallyCleared[k][driverId+':'+day]=origVal||true; }
+function unmarkCleared(y,m,driverId,day){ const k=schedKey(y,m); if(S.manuallyCleared[k]) delete S.manuallyCleared[k][driverId+':'+day]; }
+function isCleared(y,m,driverId,day){ const k=schedKey(y,m); return !!(S.manuallyCleared[k]&&S.manuallyCleared[k][driverId+':'+day]); }
+function getClearedVal(y,m,driverId,day){ const k=schedKey(y,m); return S.manuallyCleared[k]?S.manuallyCleared[k][driverId+':'+day]:undefined; }
+
+// 주간 근무 상한 결정: 이전 주 6일이면 현재 주 5일, 아니면 6일
+function getWeekMaxForDriver(driverId, wk, weeks, y, m){
+  const prevWk = weeks.find(w=>w.week===wk.week-1);
+  if(!prevWk) return 6;
+  let prevCount = 0;
+  for(let dd=prevWk.start;dd<=prevWk.end;dd++){
+    const dv = getCellVal(y,m,driverId,dd);
+    if(dv!==null&&dv!==undefined) prevCount++;
+  }
+  return prevCount >= 6 ? 5 : 6;
+}
+
+// 대체가능 여부 확장 판정 (모든 운전자 타입 지원)
+function canFillVacancyExpanded(driverId, day){
+  const y=S.year, m=S.month;
+  const dr = S.drivers.find(d=>d.id===driverId);
+  if(!dr||!dr.active) return false;
+  const val = getCellVal(y,m,driverId,day);
+  if(val!==null && val!==undefined) return false; // 이미 배정됨
+  // 자기가 공석(빨간셀)인 경우 → 초록 아님 (모든 운전자 타입)
+  if(isCleared(y,m,driverId,day)) return false;
+  // 해당 날 수동삭제 공석이 있어야 하며, 시간대 호환성 체크
+  // AM공석 → AM필러만 / PM공석 → AM+PM 모두 가능
+  const mcKey = schedKey(y,m);
+  const mcData = S.manuallyCleared[mcKey];
+  if(!mcData) return false;
+  const fillerShift = getShiftForDay(y,m,driverId,day);
+  const hasCompatibleVacancy = Object.keys(mcData).some(k=>{
+    if(!k.endsWith(':'+day)) return false;
+    const vacDid = parseInt(k.split(':')[0]);
+    const vacShift = getShiftForDay(y,m,vacDid,day);
+    // AM공석은 AM필러만, PM공석은 누구든 가능
+    if(vacShift==='AM' && fillerShift!=='AM') return false;
+    return true;
+  });
+  if(!hasCompatibleVacancy) return false;
+  // 정규근무(수 제외) < 만근+2 체크 (주간 제한은 수동 대체 시 적용하지 않음)
+  const stats = calcDriverStats(y,m,driverId);
+  if(stats.over >= 2) return false;
+  return true;
+}
+
+// 해당 날짜에 배치 가능한 모든 운전자 목록 (vacancyDriverId: 공석 드라이버ID — 수합 공석이면 3회 제한 적용)
+function getAvailableDriversForDay(day, vacancyDriverId){
+  const y=S.year, m=S.month;
+  const isSuVacancy = vacancyDriverId ? getClearedVal(y,m,vacancyDriverId,day) === '수' : false;
+  function findCandidates(checkFw){
+    const res = [];
+    S.drivers.filter(dr=>dr.active).forEach(dr=>{
+      const val = getCellVal(y,m,dr.id,day);
+      if(val!==null && val!==undefined) return;
+      if(isCleared(y,m,dr.id,day) && dr.id!==vacancyDriverId) return; // 본인은 복구 가능
+      if(vacancyDriverId){
+        const vacShift = getShiftForDay(y,m,vacancyDriverId,day);
+        const fillerShift = getShiftForDay(y,m,dr.id,day);
+        if(vacShift==='AM' && fillerShift!=='AM') return;
+      }
+      if(isSuVacancy){
+        const stats2 = calcDriverStats(y,m,dr.id);
+        if(stats2.suCount >= 3) return;
+      }
+      const stats = calcDriverStats(y,m,dr.id);
+      if(checkFw && stats.over >= 2) return; // 정규근무(수 제외) 기준 fw+2
+      const isSP = dr.vehicle==='SP';
+      const isPair = !dr.vehicle||dr.vehicle==='';
+      res.push({driverId:dr.id, name:dr.name, vehicle:dr.vehicle||'-', shift:dr.shift, dayOff:dr.dayOff, totalWork:stats.totalWork, fullWork:stats.fullWork, suCount:stats.suCount, type:isSP?'SP':isPair?'오후조':'고정'});
+    });
+    return res;
+  }
+  let result = findCandidates(true);
+  // 근무가능자가 없으면 fw+2 제한 완화 (휴무자 포함 전원 대상)
+  if(result.length === 0) result = findCandidates(false);
+  const order = {SP:0,'오후조':1,'고정':2};
+  result.sort((a,b)=>(order[a.type]||0)-(order[b.type]||0) || a.totalWork-b.totalWork);
+  return result;
+}
+
+// 해당 날짜의 빨간 공석 목록 (수동삭제만)
+function getVacanciesForDay(day){
+  const y=S.year, m=S.month;
+  const mcKey = schedKey(y,m);
+  const mcData = S.manuallyCleared[mcKey];
+  if(!mcData) return [];
+  const D = dayOffset(y,m,day);
+  const result = [];
+  Object.keys(mcData).forEach(k=>{
+    const parts = k.split(':');
+    if(parseInt(parts[1])!==day) return;
+    const did = parseInt(parts[0]);
+    const dr = S.drivers.find(d=>d.id===did);
+    if(!dr) return;
+    const origVal = mcData[k];
+    const seq = (origVal === '수') ? null : posOfVehicle(dr.vehicle, D);
+    result.push({driverId:did, name:dr.name, seq:seq, vehicle:dr.vehicle, isSu: origVal==='수'});
+  });
+  result.sort((a,b)=>(a.seq||0)-(b.seq||0));
+  return result;
+}
+
+// 만근 수 계산: 해당월날짜수 - 휴무일수 - 휴무전일수 - 법정공휴일수 (겹치면 중복제외)
+function calcFullWork(y,m,dayOff,preDayOff){
+  const days = daysInMonth(y,m);
+  const hols = getHolidays(y);
+  const dayOffIdx = DAYNAMES.indexOf(dayOff);
+  const preDayOffIdx = preDayOff ? DAYNAMES.indexOf(preDayOff) : (dayOffIdx + 6) % 7;
+  let workDays = 0;
+  for(let d=1;d<=days;d++){
+    const dow = dayOfWeek(y,m,d);
+    const k = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if(dow!==dayOffIdx && dow!==preDayOffIdx && !hols.has(k)) workDays++;
+  }
+  return workDays;
+}
+
+// 통계 계산 (특정 운전자)
+function calcDriverStats(y,m,driverId){
+  const days = daysInMonth(y,m);
+  let totalWork=0, suCount=0;
+  for(let d=1;d<=days;d++){
+    const v = getCellVal(y,m,driverId,d);
+    if(v !== null && v !== undefined){
+      if(v === '수') suCount++;
+      else if(typeof v === 'number' && v>=1 && v<=16) totalWork++;
+      else if(typeof v === 'string' && v !== '수' && !isNaN(parseInt(v))) totalWork++;
+    }
+  }
+  const driver = S.drivers.find(dr=>dr.id===driverId);
+  const dayOffKey = driver ? driver.dayOff : '월';
+  const preDayOffKey = driver ? driver.preDayOff : undefined;
+  // 만근수 공식: 해당월날짜수 - 휴무일수 - 휴무전일수 - 법정공휴일수
+  const compFW = calcFullWork(y,m,dayOffKey,preDayOffKey);
+  const over = totalWork - compFW; // 수 제외: 정규근무만으로 초과 계산
+  return {totalWork, suCount, fullWork:compFW, compFW, over};
+}
+
+// ═══════════════════════════════════════════════════
+//  자동 배치 로직
+// ═══════════════════════════════════════════════════
+function autoGenerate(){
+  showConfirm('이번 달 근무표를 자동으로 배치하시겠습니까?<br><small>기존 데이터는 덮어씌워집니다.</small>', ()=>{
+    const y = S.year, m = S.month;
+    const days = daysInMonth(y,m);
+    const key = schedKey(y,m);
+    const weeks = getWeeksInMonth(y,m);
+    S.scheduleData[key] = {};
+    S.manuallyCleared[key] = {};
+    S.shiftOverrides[key] = {};
+
+    // 전체 초기화
+    S.drivers.filter(dr=>dr.active).forEach(dr=>{ S.scheduleData[key][dr.id] = {}; });
+
+    // 헬퍼: 주 내 근무일수
+    function weekWorkCount(driverId, wk){
+      const dd = S.scheduleData[key][driverId]||{};
+      return Object.keys(dd).filter(d=>{const n=parseInt(d);return n>=wk.start&&n<=wk.end&&dd[d]!==null&&dd[d]!==undefined&&dd[d]!=='수';}).length;
+    }
+    // 헬퍼: 주간 근무 상한 (이전 주 6일이면 현재 주 5일)
+    function weekMaxForDriver(driverId, wk){
+      const prevWk = weeks.find(w=>w.week===wk.week-1);
+      if(!prevWk) return 6;
+      return weekWorkCount(driverId, prevWk) >= 6 ? 5 : 6;
+    }
+    // 헬퍼: 현재 총 근무일수
+    function totalWork(driverId){
+      return Object.values(S.scheduleData[key][driverId]||{}).filter(v=>v!==null&&v!==undefined&&v!=='수').length;
+    }
+    // 헬퍼: 현재까지 weekMax 위반 주 수 (pass 3용 균등분산)
+    function weekMaxViolations(driverId){
+      let cnt=0;
+      weeks.forEach(wk=>{
+        if(weekWorkCount(driverId,wk) > weekMaxForDriver(driverId,wk)) cnt++;
+      });
+      return cnt;
+    }
+
+    // 헬퍼: preDayOff + 수 연속근무 방지 (다음날이 휴무일이고 수합 배정이면 오늘 건너뛰기)
+    function isSuRestConflict(driverId, d){
+      if(d < days){
+        const dr = S.drivers.find(dd=>dd.id===driverId);
+        if(!dr) return false;
+        const dayOffIdx = DAYNAMES.indexOf(dr.dayOff);
+        if(dayOfWeek(y,m,d+1) === dayOffIdx && S.scheduleData[key][driverId]?.[d+1] === '수') return true;
+      }
+      return false;
+    }
+
+    // 고정 운전자 (차량 있음, SP 제외)
+    const regularDrs = S.drivers.filter(dr=>dr.active && dr.vehicle && dr.vehicle!=='SP' && dr.vehicle!=='');
+    // 고정 페어 (차량 없음, 파트너가 고정차량)
+    const regularPairDrs = S.drivers.filter(dr=>{
+      if(!dr.active || dr.vehicle) return false;
+      const partner = S.drivers.find(p=>p.id===dr.id-1&&p.active);
+      return partner && partner.vehicle && partner.vehicle!=='SP' && partner.vehicle!=='';
+    });
+    // 모든 고정 운전자 (오전+오후)
+    const allFixedDrs = [...regularDrs, ...regularPairDrs];
+    // SP 운전자
+    const spDrs = S.drivers.filter(dr=>dr.active && dr.vehicle==='SP');
+    // SP 페어
+    const spPairDrs = S.drivers.filter(dr=>{
+      if(!dr.active || dr.vehicle) return false;
+      const partner = S.drivers.find(p=>p.id===dr.id-1&&p.active);
+      return partner && partner.vehicle==='SP';
+    });
+    const allSPDrs = [...spDrs, ...spPairDrs];
+    const hols = getHolidays(y);
+
+    // ── 0단계: 편도(수) 선배치 — 평일 매일 2명, 1인당 월 3회, 쉬는날 우선 + 균등 분배 ──
+    const suMonthCount = {};
+    S.drivers.filter(dr=>dr.active).forEach(dr=>{ suMonthCount[dr.id]=0; });
+    for(let d=1;d<=days;d++){
+      if(isSat(y,m,d)||isSun(y,m,d)) continue;
+      const dow0 = dayOfWeek(y,m,d);
+      const dk0 = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const isHol0 = hols.has(dk0);
+      // SP 포함 전체 운전자가 편도(수) 대상 + 주간 제한 체크
+      const wk0 = weeks.find(w=>d>=w.start&&d<=w.end);
+      const candidates = [...allFixedDrs, ...allSPDrs].filter(dr => {
+        if(suMonthCount[dr.id] >= 3) return false;
+        if(wk0 && weekWorkCount(dr.id,wk0) >= weekMaxForDriver(dr.id,wk0)) return false;
+        return true;
+      });
+      candidates.sort((a,b)=>{
+        const countDiff = (suMonthCount[a.id]||0) - (suMonthCount[b.id]||0);
+        if(countDiff !== 0) return countDiff;
+        const aOff = DAYNAMES.indexOf(a.dayOff);
+        const bOff = DAYNAMES.indexOf(b.dayOff);
+        const aPreOff = a.preDayOff ? DAYNAMES.indexOf(a.preDayOff) : (aOff+6)%7;
+        const bPreOff = b.preDayOff ? DAYNAMES.indexOf(b.preDayOff) : (bOff+6)%7;
+        const aPri = dow0===aPreOff ? 0 : dow0===aOff ? 1 : isHol0 ? 2 : 3;
+        const bPri = dow0===bPreOff ? 0 : dow0===bOff ? 1 : isHol0 ? 2 : 3;
+        return aPri - bPri;
+      });
+      for(let i=0;i<Math.min(2,candidates.length);i++){
+        S.scheduleData[key][candidates[i].id][d] = '수';
+        suMonthCount[candidates[i].id]++;
+      }
+    }
+
+    // ── 1단계: 모든 고정 운전자 배치 (오전/오후 자동 교대) ──
+    // 주별 균등 분배: maxWork를 주 단위로 나눠서 월말 공백 방지
+    allFixedDrs.forEach(dr=>{
+      const veh = dr.vehicle || (S.drivers.find(p=>p.id===dr.id-1&&p.active)||{}).vehicle;
+      if(!veh) return;
+      const compFW = calcFullWork(y,m,dr.dayOff,dr.preDayOff);
+      const maxWork = compFW; // 수는 근무일수에 포함하지 않음
+      const dayOffIdx = DAYNAMES.indexOf(dr.dayOff);
+      let totalAssigned = 0;
+
+      // 헬퍼: 휴무일에 수합 배정 시 전날 근무 건너뛰기 (연속근무로 휴식 없는 상황 방지)
+      function skipForSuRest(driverId, d){
+        if(d < days){
+          const nextDow = dayOfWeek(y,m,d+1);
+          if(nextDow === dayOffIdx && S.scheduleData[key][driverId][d+1] === '수') return true;
+        }
+        return false;
+      }
+
+      // Pass 1: 주별 균등 배분 — 정순(월→토), ceil로 앞쪽 주에 금요일 포함
+      for(let wi=0; wi<weeks.length; wi++){
+        const wk = weeks[wi];
+        const wMax = weekMaxForDriver(dr.id, wk);
+        const curWk = weekWorkCount(dr.id, wk);
+        const cap = Math.max(0, wMax - curWk);
+        const remaining = maxWork - totalAssigned;
+        if(remaining <= 0) break;
+        const weeksLeft = weeks.length - wi;
+        const target = Math.min(cap, Math.ceil(remaining / weeksLeft));
+        let wkA = 0;
+        for(let d=wk.start; d<=wk.end; d++){
+          if(wkA >= target || totalAssigned >= maxWork) break;
+          if(dayOfWeek(y,m,d) === dayOffIdx) continue;
+          if(S.scheduleData[key][dr.id][d] != null) continue;
+          if(skipForSuRest(dr.id, d)) continue;
+          if(weekWorkCount(dr.id, wk) >= wMax) break;
+          const D = dayOffset(y,m,d);
+          const pos = posOfVehicle(veh, D);
+          if(pos !== null && pos <= maxSeqForDay(y,m,d)){
+            S.scheduleData[key][dr.id][d] = pos; wkA++; totalAssigned++;
+          }
+        }
+      }
+      // Pass 2: 남은 할당량을 평일만 정순으로 채움 (Pass 1에서 못 채운 금요일 우선)
+      // 토/일은 enforceStaffing(Step 5)에서 처리 — 여기서 채우면 금요일 슬롯 부족
+      for(let wi=0; wi<weeks.length && totalAssigned < maxWork; wi++){
+        const wk = weeks[wi];
+        const wMax = weekMaxForDriver(dr.id, wk);
+        for(let d=wk.start; d<=wk.end && totalAssigned < maxWork; d++){
+          if(isSat(y,m,d) || isSun(y,m,d) || isHoliday(y,m,d)) continue;
+          if(dayOfWeek(y,m,d) === dayOffIdx) continue;
+          if(S.scheduleData[key][dr.id][d] != null) continue;
+          if(skipForSuRest(dr.id, d)) continue;
+          if(weekWorkCount(dr.id, wk) >= wMax) break;
+          const D = dayOffset(y,m,d);
+          const pos = posOfVehicle(veh, D);
+          if(pos !== null && pos <= maxSeqForDay(y,m,d)){
+            S.scheduleData[key][dr.id][d] = pos; totalAssigned++;
+          }
+        }
+      }
+    });
+
+    // ── 1-c단계: 차량 순번 초과 시 빈 순번에 배치 (주말/공휴일 대응) ──
+    // 주별 균등 분배 적용
+    allFixedDrs.forEach(dr=>{
+      const compFW = calcFullWork(y,m,dr.dayOff,dr.preDayOff);
+      const dayOffIdx = DAYNAMES.indexOf(dr.dayOff);
+      let tw = totalWork(dr.id);
+      if(tw >= compFW) return;
+      const target1c = compFW - tw;
+      let assigned1c = 0;
+
+      // 헬퍼: 휴무일에 수합 배정 시 전날 근무 건너뛰기
+      function skipForSuRest1c(driverId, d){
+        if(d < days){
+          const nextDow = dayOfWeek(y,m,d+1);
+          if(nextDow === dayOffIdx && S.scheduleData[key][driverId][d+1] === '수') return true;
+        }
+        return false;
+      }
+
+      // Pass 1: 주별 균등 — 정순(월→토), ceil로 앞쪽 주에 금요일 포함
+      for(let wi=0; wi<weeks.length; wi++){
+        const wk = weeks[wi];
+        const wMax = weekMaxForDriver(dr.id, wk);
+        const curWk = weekWorkCount(dr.id, wk);
+        const cap = Math.max(0, wMax - curWk);
+        const rem = target1c - assigned1c;
+        if(rem <= 0) break;
+        const wLeft = weeks.length - wi;
+        const wTarget = Math.min(cap, Math.ceil(rem / wLeft));
+        let wkA = 0;
+        for(let d=wk.start; d<=wk.end; d++){
+          if(wkA >= wTarget || assigned1c >= target1c) break;
+          if(dayOfWeek(y,m,d) === dayOffIdx) continue;
+          if(S.scheduleData[key][dr.id][d] != null) continue;
+          if(skipForSuRest1c(dr.id, d)) continue;
+          if(weekWorkCount(dr.id, wk) >= wMax) break;
+          const maxSeq = maxSeqForDay(y,m,d);
+          const myShift = getShiftForDay(y,m,dr.id,d);
+          const taken = new Set();
+          S.drivers.filter(dd=>dd.active).forEach(dd=>{
+            if(getShiftForDay(y,m,dd.id,d) !== myShift) return;
+            const v = S.scheduleData[key][dd.id]?.[d];
+            if(typeof v==='number') taken.add(v);
+          });
+          for(let seq=1;seq<=maxSeq;seq++){
+            if(!taken.has(seq)){
+              S.scheduleData[key][dr.id][d] = seq; wkA++; assigned1c++; break;
+            }
+          }
+        }
+      }
+      // Pass 2: 남은 할당량을 평일만 정순으로 채움 (금요일 우선 확보)
+      for(let wi=0; wi<weeks.length && assigned1c < target1c; wi++){
+        const wk = weeks[wi];
+        const wMax = weekMaxForDriver(dr.id, wk);
+        for(let d=wk.start; d<=wk.end && assigned1c < target1c; d++){
+          if(isSat(y,m,d) || isSun(y,m,d) || isHoliday(y,m,d)) continue;
+          if(dayOfWeek(y,m,d) === dayOffIdx) continue;
+          if(S.scheduleData[key][dr.id][d] != null) continue;
+          if(skipForSuRest1c(dr.id, d)) continue;
+          if(weekWorkCount(dr.id, wk) >= wMax) break;
+          const maxSeq = maxSeqForDay(y,m,d);
+          const myShift = getShiftForDay(y,m,dr.id,d);
+          const taken = new Set();
+          S.drivers.filter(dd=>dd.active).forEach(dd=>{
+            if(getShiftForDay(y,m,dd.id,d) !== myShift) return;
+            const v = S.scheduleData[key][dd.id]?.[d];
+            if(typeof v==='number') taken.add(v);
+          });
+          for(let seq=1;seq<=maxSeq;seq++){
+            if(!taken.has(seq)){
+              S.scheduleData[key][dr.id][d] = seq; assigned1c++; break;
+            }
+          }
+        }
+      }
+    });
+
+    // ── 2단계: SP 공석 대체 배치 (오전/오후 각각) ──
+    for(let d=1;d<=days;d++){
+      const dn = dayName(y,m,d);
+      const D = dayOffset(y,m,d);
+      const maxSeq = maxSeqForDay(y,m,d);
+      const wkSP = weeks.find(w=>d>=w.start&&d<=w.end);
+
+      for(const shift of ['AM','PM']){
+        // 이 시간대에 이미 배정된 순번 수집
+        const takenSeqs = new Set();
+        S.drivers.filter(dr=>dr.active).forEach(dr=>{
+          if(getShiftForDay(y,m,dr.id,d) !== shift) return;
+          const v = S.scheduleData[key][dr.id]?.[d];
+          if(v!==null && v!==undefined && typeof v==='number') takenSeqs.add(v);
+        });
+        // 빈 순번 찾기
+        const openSeqs = [];
+        for(let seq=1;seq<=maxSeq;seq++){
+          if(!takenSeqs.has(seq)) openSeqs.push(seq);
+        }
+        if(openSeqs.length===0) continue;
+        // 이 시간대의 가용 SP (해당일에 이 shift인 SP만, 휴무전날 포함하되 순위 뒤)
+        const availSP = allSPDrs.filter(sp=>{
+          if(getShiftForDay(y,m,sp.id,d) !== shift) return false;
+          if(dn===sp.dayOff) return false;
+          const ex = S.scheduleData[key][sp.id]?.[d];
+          if(ex!==null&&ex!==undefined) return false;
+          if(totalWork(sp.id) >= calcFullWork(y,m,sp.dayOff,sp.preDayOff)+2) return false;
+          if(wkSP && weekWorkCount(sp.id,wkSP)>=weekMaxForDriver(sp.id,wkSP)) return false;
+          return true;
+        }).sort((a,b)=>{
+          // 휴무전날 아닌 사람 우선
+          const aPdo = dn===(a.preDayOff||DAYNAMES[(DAYNAMES.indexOf(a.dayOff)+6)%7]) ? 1 : 0;
+          const bPdo = dn===(b.preDayOff||DAYNAMES[(DAYNAMES.indexOf(b.dayOff)+6)%7]) ? 1 : 0;
+          if(aPdo!==bPdo) return aPdo-bPdo;
+          return (totalWork(a.id)-calcFullWork(y,m,a.dayOff,a.preDayOff)) - (totalWork(b.id)-calcFullWork(y,m,b.dayOff,b.preDayOff));
+        });
+        let spIdx = 0;
+        openSeqs.forEach(seq=>{
+          if(spIdx >= availSP.length) return;
+          S.scheduleData[key][availSP[spIdx].id][d] = seq;
+          spIdx++;
+        });
+      }
+    }
+
+    // ── 3단계: 고정근무자 초과 해소 ──
+    allFixedDrs.forEach(dr=>{
+      const st = calcDriverStats(y,m,dr.id);
+      if(st.over <= 0) return;
+      let toRemove = st.over;
+      for(let d=days;d>=1&&toRemove>0;d--){
+        const v = S.scheduleData[key][dr.id]?.[d];
+        if(v!==null&&v!==undefined&&v!=='수'&&typeof v==='number'){
+          S.scheduleData[key][dr.id][d] = null;
+          toRemove--;
+        }
+      }
+    });
+
+    // ── 3-b단계: Step 3에서 빈 자리 SP 백필 ──
+    for(let d=1;d<=days;d++){
+      const maxSeq3b = maxSeqForDay(y,m,d);
+      const dn3b = dayName(y,m,d);
+      const wk3b = weeks.find(w=>d>=w.start&&d<=w.end);
+      for(const shift of ['AM','PM']){
+        const takenSeqs3b = new Set();
+        S.drivers.filter(dr=>dr.active).forEach(dr=>{
+          if(getShiftForDay(y,m,dr.id,d) !== shift) return;
+          const v = S.scheduleData[key][dr.id]?.[d];
+          if(typeof v==='number' && v>=1 && v<=maxSeq3b) takenSeqs3b.add(v);
+        });
+        for(let seq=1;seq<=maxSeq3b;seq++){
+          if(takenSeqs3b.has(seq)) continue;
+          // 빈 순번에 SP 배치 시도
+          const cand3b = allSPDrs.filter(sp=>{
+            if(getShiftForDay(y,m,sp.id,d) !== shift) return false;
+            if(dn3b===sp.dayOff) return false;
+            const ex = S.scheduleData[key][sp.id]?.[d];
+            if(ex!==null&&ex!==undefined) return false;
+            if(totalWork(sp.id) >= calcFullWork(y,m,sp.dayOff,sp.preDayOff)+2) return false;
+            if(wk3b && weekWorkCount(sp.id,wk3b)>=weekMaxForDriver(sp.id,wk3b)) return false;
+            return true;
+          }).sort((a,b)=>{
+            return (totalWork(a.id)-calcFullWork(y,m,a.dayOff,a.preDayOff)) - (totalWork(b.id)-calcFullWork(y,m,b.dayOff,b.preDayOff));
+          });
+          if(cand3b.length>0){
+            S.scheduleData[key][cand3b[0].id][d] = seq;
+          }
+        }
+      }
+    }
+
+    // ── 4단계: SP 밸런스 — over→under 이동 ──
+    for(let pass=0;pass<20;pass++){
+      let moved = false;
+      const overList = allSPDrs.filter(sp=>calcDriverStats(y,m,sp.id).over>0)
+        .sort((a,b)=>calcDriverStats(y,m,b.id).over - calcDriverStats(y,m,a.id).over);
+      const underList = allSPDrs.filter(sp=>calcDriverStats(y,m,sp.id).over<0)
+        .sort((a,b)=>calcDriverStats(y,m,a.id).over - calcDriverStats(y,m,b.id).over);
+      if(overList.length===0||underList.length===0) break;
+      for(const overSP of overList){
+        if(calcDriverStats(y,m,overSP.id).over<=0) continue;
+        for(let d=days;d>=1;d--){
+          const v = S.scheduleData[key][overSP.id]?.[d];
+          if(v===null||v===undefined||v==='수'||typeof v!=='number') continue;
+          const shiftD = getShiftForDay(y,m,overSP.id,d);
+          for(const underSP of underList){
+            if(calcDriverStats(y,m,underSP.id).over>=0) continue;
+            if(dayName(y,m,d)===underSP.dayOff) continue;
+            if(dayName(y,m,d)===(underSP.preDayOff||DAYNAMES[(DAYNAMES.indexOf(underSP.dayOff)+6)%7])) continue;
+            if(getShiftForDay(y,m,underSP.id,d)!==shiftD) continue;
+            const existing = S.scheduleData[key][underSP.id]?.[d];
+            if(existing!==null&&existing!==undefined) continue;
+            const wk6 = weeks.find(w=>d>=w.start&&d<=w.end);
+            if(wk6 && weekWorkCount(underSP.id,wk6)>=weekMaxForDriver(underSP.id,wk6)) continue;
+            S.scheduleData[key][underSP.id][d] = v;
+            S.scheduleData[key][overSP.id][d] = null;
+            moved = true;
+            break;
+          }
+          if(calcDriverStats(y,m,overSP.id).over<=0) break;
+        }
+      }
+      if(!moved) break;
+    }
+
+    // ── 정원 보장 헬퍼: 초과 제거 + 빈 자리 채우기 ──
+    function enforceStaffing(d, maxSeq, shift){
+      const dn = dayName(y,m,d);
+      const wkE = weeks.find(w=>d>=w.start&&d<=w.end);
+      const allActive = S.drivers.filter(dr=>dr.active);
+      const shiftDrs = allActive.filter(dr=>getShiftForDay(y,m,dr.id,d)===shift);
+
+      // (A) 유효한 순번만 남기고 범위밖/중복 제거
+      const validPos = {};
+      const excessDrs = []; // 유효 범위 내이지만 중복인 운전자
+      shiftDrs.forEach(dr=>{
+        const v = S.scheduleData[key][dr.id]?.[d];
+        const vn = typeof v==='string' ? parseInt(v) : v;
+        if(typeof vn==='number' && !isNaN(vn) && vn>=1 && vn<=maxSeq){
+          if(!validPos[vn]){
+            validPos[vn] = dr.id;
+          } else {
+            // 중복: 초과 운전자 → 해제
+            S.scheduleData[key][dr.id][d] = null;
+            excessDrs.push(dr.id);
+          }
+        } else if(v!==null && v!==undefined && v!=='수'){
+          // 범위 밖(>maxSeq) 또는 유효하지 않은 값 → 제거
+          S.scheduleData[key][dr.id][d] = null;
+        }
+      });
+
+      // (B) 빈 순번 채우기 — 3-pass (정원 16/10/8 최우선 보장)
+      function sortCand(a,b){
+        const aPdo = a.preDayOff||DAYNAMES[(DAYNAMES.indexOf(a.dayOff)+6)%7];
+        const bPdo = b.preDayOff||DAYNAMES[(DAYNAMES.indexOf(b.dayOff)+6)%7];
+        const aIsPdo = dn===aPdo ? 1 : 0;
+        const bIsPdo = dn===bPdo ? 1 : 0;
+        if(aIsPdo!==bIsPdo) return aIsPdo-bIsPdo;
+        const aIsSP = allSPDrs.some(sp=>sp.id===a.id) ? 1 : 0;
+        const bIsSP = allSPDrs.some(sp=>sp.id===b.id) ? 1 : 0;
+        if(aIsSP!==bIsSP) return aIsSP-bIsSP;
+        return (totalWork(a.id)-calcFullWork(y,m,a.dayOff,a.preDayOff)) - (totalWork(b.id)-calcFullWork(y,m,b.dayOff,b.preDayOff));
+      }
+      function candFilter(dr, allowDayOff, relaxWeekMax){
+        const ex = S.scheduleData[key][dr.id]?.[d];
+        if(ex!==null&&ex!==undefined) return false;
+        if(!allowDayOff && dn===dr.dayOff) return false;
+        if(!allowDayOff && isSuRestConflict(dr.id, d)) return false; // preDayOff+수 연속근무 방지
+        if(!relaxWeekMax && wkE && weekWorkCount(dr.id,wkE)>=weekMaxForDriver(dr.id,wkE)) return false;
+        if(relaxWeekMax && wkE && weekWorkCount(dr.id,wkE)>=6) return false; // 주 6일 절대상한
+        const tw = totalWork(dr.id);
+        const fw = calcFullWork(y,m,dr.dayOff,dr.preDayOff);
+        if(tw>=fw+2) return false;
+        return true;
+      }
+      function candSort(a,b,penalizeDayOff){
+        if(penalizeDayOff){
+          const aOff = dn===a.dayOff?1:0, bOff = dn===b.dayOff?1:0;
+          if(aOff!==bOff) return aOff-bOff;
+        }
+        return sortCand(a,b);
+      }
+      for(let seq=1;seq<=maxSeq;seq++){
+        if(validPos[seq]) continue;
+        // 1차: dayOff 제외 + weekMax 준수 + fw+2
+        let cand = shiftDrs.filter(dr=>candFilter(dr,false,false)).sort((a,b)=>candSort(a,b,false));
+        // 2차: dayOff 허용 + weekMax 준수 + fw+2
+        if(cand.length===0) cand = shiftDrs.filter(dr=>candFilter(dr,true,false)).sort((a,b)=>candSort(a,b,true));
+        // 3차: dayOff 허용 + weekMax 완화(주6일상한) — 위반 적은 사람 우선
+        if(cand.length===0){
+          cand = shiftDrs.filter(dr=>candFilter(dr,true,true)).sort((a,b)=>{
+            const aV = weekMaxViolations(a.id), bV = weekMaxViolations(b.id);
+            if(aV!==bV) return aV-bV; // 위반 적은 사람 우선
+            return candSort(a,b,true);
+          });
+        }
+        if(cand.length>0){
+          S.scheduleData[key][cand[0].id][d] = seq;
+          validPos[seq] = cand[0].id;
+        }
+      }
+    }
+
+    // ── 5단계: 주말/공휴일 정원 강제 보장 — 토 10대, 일/공휴일 8대 ──
+    for(let d=1;d<=days;d++){
+      if(!isSat(y,m,d) && !isSun(y,m,d) && !isHoliday(y,m,d)) continue;
+      const maxSeq5 = maxSeqForDay(y,m,d);
+      for(const shift of ['AM','PM']){ enforceStaffing(d, maxSeq5, shift); }
+    }
+
+    // ── 6단계: 평일 정원 강제 보장 — 오전 16대, 오후 16대 (역순 — 월말 우선) ──
+    // 정순 시 월초에서 fw+2 예산 소진 → 월말 빈 자리 발생. 역순으로 월말부터 채움
+    for(let d=days;d>=1;d--){
+      if(isSat(y,m,d)||isSun(y,m,d)||isHoliday(y,m,d)) continue;
+      for(const shift of ['AM','PM']){ enforceStaffing(d, 16, shift); }
+    }
+
+    // ── 7단계: 초과/미달 균등 리밸런싱 — 초과+2 이상 → 미달 운전자로 이동 ──
+    // 목표: 모든 운전자 over ≤ +1, 최대한 0에 수렴
+    const allDrs7 = S.drivers.filter(dr=>dr.active);
+    for(let pass=0;pass<50;pass++){
+      let moved = false;
+      // 초과 운전자 (over >= 2) — 가장 많은 사람부터
+      const overDrs = allDrs7.filter(dr=>calcDriverStats(y,m,dr.id).over>=2)
+        .sort((a,b)=>calcDriverStats(y,m,b.id).over - calcDriverStats(y,m,a.id).over);
+      if(overDrs.length===0) break;
+
+      for(const overDr of overDrs){
+        let overStat = calcDriverStats(y,m,overDr.id);
+        if(overStat.over < 2) continue;
+
+        // 이 운전자의 근무일 중 제거 가능한 날 찾기 (뒤에서부터)
+        for(let d=days;d>=1;d--){
+          if(overStat.over < 2) break;
+          const v = S.scheduleData[key][overDr.id]?.[d];
+          if(v===null||v===undefined||v==='수'||typeof v!=='number') continue;
+          const shiftD = getShiftForDay(y,m,overDr.id,d);
+          const dn7 = dayName(y,m,d);
+          const wk7 = weeks.find(w=>d>=w.start&&d<=w.end);
+
+          // 미달 운전자 (over < 0) 중 이 날 이 시간대에 투입 가능한 사람
+          const underDrs = allDrs7.filter(u=>{
+            if(u.id===overDr.id) return false;
+            const uStat = calcDriverStats(y,m,u.id);
+            if(uStat.over >= 0) return false; // 이미 만근 이상
+            if(dn7===u.dayOff) return false;
+            if(isSuRestConflict(u.id, d)) return false; // preDayOff+수 연속근무 방지
+            if(getShiftForDay(y,m,u.id,d)!==shiftD) return false;
+            const ex = S.scheduleData[key][u.id]?.[d];
+            if(ex!==null&&ex!==undefined) return false;
+            if(wk7&&weekWorkCount(u.id,wk7)>=weekMaxForDriver(u.id,wk7)) return false;
+            return true;
+          }).sort((a,b)=>calcDriverStats(y,m,a.id).over - calcDriverStats(y,m,b.id).over);
+
+          if(underDrs.length>0){
+            // 이동: over → under
+            S.scheduleData[key][underDrs[0].id][d] = v;
+            S.scheduleData[key][overDr.id][d] = null;
+            moved = true;
+            overStat = calcDriverStats(y,m,overDr.id);
+          }
+        }
+      }
+      if(!moved) break;
+    }
+
+    // ── 8단계: over >= 1 추가 리밸런싱 (over +1 → under -1 이하로 이동) ──
+    for(let pass=0;pass<30;pass++){
+      let moved = false;
+      const overDrs8 = allDrs7.filter(dr=>calcDriverStats(y,m,dr.id).over>=1)
+        .sort((a,b)=>calcDriverStats(y,m,b.id).over - calcDriverStats(y,m,a.id).over);
+      const hasUnder = allDrs7.some(dr=>calcDriverStats(y,m,dr.id).over<=-1);
+      if(overDrs8.length===0||!hasUnder) break;
+
+      for(const overDr of overDrs8){
+        let overStat = calcDriverStats(y,m,overDr.id);
+        if(overStat.over < 1) continue;
+
+        for(let d=days;d>=1;d--){
+          if(overStat.over < 1) break;
+          const v = S.scheduleData[key][overDr.id]?.[d];
+          if(v===null||v===undefined||v==='수'||typeof v!=='number') continue;
+          const shiftD = getShiftForDay(y,m,overDr.id,d);
+          const dn8 = dayName(y,m,d);
+          const wk8 = weeks.find(w=>d>=w.start&&d<=w.end);
+
+          const underDrs8 = allDrs7.filter(u=>{
+            if(u.id===overDr.id) return false;
+            const uStat = calcDriverStats(y,m,u.id);
+            if(uStat.over >= -1) return false; // -2 이하만 대상
+            if(dn8===u.dayOff) return false;
+            if(isSuRestConflict(u.id, d)) return false; // preDayOff+수 연속근무 방지
+            if(getShiftForDay(y,m,u.id,d)!==shiftD) return false;
+            const ex = S.scheduleData[key][u.id]?.[d];
+            if(ex!==null&&ex!==undefined) return false;
+            if(wk8&&weekWorkCount(u.id,wk8)>=weekMaxForDriver(u.id,wk8)) return false;
+            return true;
+          }).sort((a,b)=>calcDriverStats(y,m,a.id).over - calcDriverStats(y,m,b.id).over);
+
+          if(underDrs8.length>0){
+            S.scheduleData[key][underDrs8[0].id][d] = v;
+            S.scheduleData[key][overDr.id][d] = null;
+            moved = true;
+            overStat = calcDriverStats(y,m,overDr.id);
+          }
+        }
+      }
+      if(!moved) break;
+    }
+
+    // ── 9단계: 리밸런싱 후 최종 정원 보장 (역순 — 월말 우선) ──
+    // Steps 7/8에서 초과근무자의 근무를 줄였으므로 이제 fw+2 미만인 운전자가 늘어남
+    // 역순으로 처리하여 월말 빈 자리부터 채움 (정순 시 월초에서 fw+2 소진 방지)
+    for(let d=days;d>=1;d--){
+      const maxSeq9 = maxSeqForDay(y,m,d);
+      for(const shift of ['AM','PM']){ enforceStaffing(d, maxSeq9, shift); }
+    }
+    // 9b: 정순 보완 — 역순에서 놓친 월초 빈 자리 최종 보완
+    for(let d=1;d<=days;d++){
+      const maxSeq9b = maxSeqForDay(y,m,d);
+      for(const shift of ['AM','PM']){ enforceStaffing(d, maxSeq9b, shift); }
+    }
+
+    saveToStorage();
+    renderMonthlySchedule();
+    renderStats();
+    showStatus('자동 배치 완료!');
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  렌더링: 월간 근무표
+// ═══════════════════════════════════════════════════
+function renderMonthlySchedule(){
+  const y = S.year, m = S.month;
+  const days = daysInMonth(y,m);
+  const weeks = getWeeksInMonth(y,m);
+  document.getElementById('monthlyTitle').textContent = `${y}년 ${m}월 근무표`;
+
+  let html = `<table class="sched-table"><thead>`;
+
+  // ── 헤더 행1: 년월 (colspan 5: 번호/차량/성명/휴무/조) ──
+  html += `<tr><th class="th-main" colspan="5">${y}년 ${m}월</th>`;
+  for(let d=1;d<=days;d++){
+    const hol = isHoliday(y,m,d);
+    const preHol = !hol && d<days && isHoliday(y,m,d+1);
+    let cls = isSat(y,m,d)?'th-sat':isSun(y,m,d)?'th-sun':'th-day';
+    const holStyle = (hol||preHol) ? ' style="background:#c8a000;color:#fff;"' : '';
+    html += `<th id="dayHdr${d}" class="${cls}"${holStyle}>${d}</th>`;
+  }
+  html += `<th class="th-main" colspan="5">집계</th></tr>`;
+
+  // ── 헤더 행2: 요일 ──
+  html += `<tr><th class="th-sub">번호</th><th class="th-sub">차량</th><th class="th-sub">성명</th><th class="th-sub">휴무</th><th class="th-sub">구분</th>`;
+  for(let d=1;d<=days;d++){
+    const hol = isHoliday(y,m,d);
+    const preHol = !hol && d<days && isHoliday(y,m,d+1);
+    let cls = isSat(y,m,d)?'th-sat':isSun(y,m,d)?'th-sun':'th-day';
+    const holStyle = (hol||preHol) ? ' style="background:#c8a000;color:#fff;"' : '';
+    html += `<th class="${cls}" style="font-size:13px;${(hol||preHol)?'background:#c8a000;color:#fff;':''}">${dayName(y,m,d)}</th>`;
+  }
+  html += `<th class="th-sub">만근수</th><th class="th-sub">총근무</th><th class="th-sub">수합</th><th class="th-sub">초과</th><th class="th-sub">특이사항</th></tr></thead><tbody>`;
+
+  // ── 데이터 행 ──
+  const activeDrivers = S.drivers.filter(dr=>dr.active).sort((a,b)=>(a.seq||a.id)-(b.seq||b.id));
+  // 날짜별 공석 목록 (고정 운전자가 비어있는 날 + 수합 공석 포함) 미리 계산
+  const vacancyMap = {}; // {d: [{driverId, name, seq, vehicle, cleared, isSu}]}
+  for(let d=1;d<=days;d++){
+    const dn = dayName(y,m,d);
+    const D = dayOffset(y,m,d);
+    const vacants = [];
+    S.drivers.forEach(dr=>{
+      if(!dr.active) return;
+      const v = getCellVal(y,m,dr.id,d);
+      if(v===null||v===undefined){
+        const clrVal = getClearedVal(y,m,dr.id,d);
+        const isRegV = dr.vehicle && dr.vehicle!=='SP' && dr.vehicle!=='';
+        if(clrVal === '수'){
+          // 수합 공석 — 모든 운전자 타입 포함
+          vacants.push({driverId:dr.id, name:dr.name, seq:null, vehicle:dr.vehicle||'-', cleared:true, isSu:true});
+        } else if(isCleared(y,m,dr.id,d)){
+          // 수동삭제 공석 — 모든 운전자 타입 (고정+SP+페어+휴무일 포함)
+          const pos = isRegV ? posOfVehicle(dr.vehicle, D) : null;
+          vacants.push({driverId:dr.id, name:dr.name, seq:pos, vehicle:dr.vehicle||'-', cleared:true, isSu:false});
+        } else if(isRegV && dn!==dr.dayOff){
+          // 고정운전자 자연 공석 (비수동)
+          const pos = posOfVehicle(dr.vehicle, D);
+          vacants.push({driverId:dr.id, name:dr.name, seq:pos, vehicle:dr.vehicle, cleared:false, isSu:false});
+        }
+      }
+    });
+    vacancyMap[d] = vacants;
+  }
+
+  activeDrivers.forEach((dr,ri)=>{
+    const isRegular = dr.vehicle && dr.vehicle!=='SP' && dr.vehicle!=='';
+    const even = ri%2===1 ? 'row-even':'';
+    const driverStats = calcDriverStats(y,m,dr.id);
+
+    for(const subShift of ['AM','PM']){
+      html += `<tr class="${even}">`;
+      if(subShift==='AM'){
+        // 부운전자(짝수 ID)는 주운전자(id-1)의 차량번호 표시
+        let dispVeh = dr.vehicle || '';
+        if(!dispVeh || dispVeh===''){
+          const partner = S.drivers.find(p=>p.id===dr.id-1&&p.active);
+          dispVeh = partner ? (partner.vehicle||'-') : '-';
+        }
+        html += `<td class="col-info" rowspan="2">${dr.seq||dr.id}</td>`;
+        html += `<td class="col-info" rowspan="2">${dispVeh}</td>`;
+        html += `<td class="col-name" rowspan="2"><b>${dr.name}</b></td>`;
+        html += `<td class="col-info" rowspan="2">${dr.dayOff}</td>`;
+      }
+      html += `<td class="col-info" style="font-size:11px;padding:1px 4px;">${subShift==='AM'?'오전':'오후'}</td>`;
+
+      for(let d=1;d<=days;d++){
+        const dn = dayName(y,m,d);
+        const isOff = dn === dr.dayOff;
+        const val = getCellVal(y,m,dr.id,d);
+        const note = getCellNote(y,m,dr.id,d);
+        const hol = isHoliday(y,m,d);
+        const preHol = !hol && d<days && isHoliday(y,m,d+1);
+        const dayOffIdx = DAYNAMES.indexOf(dr.dayOff);
+        const preDayOffName = dr.preDayOff || DAYNAMES[(dayOffIdx+6)%7];
+        const isPreDayOff = !isOff && dn === preDayOffName;
+        const shiftToday = getShiftForDay(y,m,dr.id,d);
+        const isActiveRow = shiftToday === subShift;
+
+        if(isOff && val==='수' && isActiveRow){
+          // 휴무일이지만 수합(수) 배정된 셀 → 수 표시 (보라색)
+          html += `<td class="day-cell cell-su" onclick="openCellEdit(${dr.id},${d})">수</td>`;
+        } else if(isOff && isActiveRow && (val===null||val===undefined) && isCleared(y,m,dr.id,d)){
+          // 휴무일 + 수동삭제 공석 → 빨간셀
+          const cOrigOff = getClearedVal(y,m,dr.id,d);
+          if(cOrigOff === '수'){
+            html += `<td class="day-cell cell-off" style="background:#ffcccc!important;border:2px solid #dc3545!important;color:#dc3545;font-weight:700;" onclick="openCellEdit(${dr.id},${d})">수</td>`;
+          } else {
+            html += `<td class="day-cell cell-off" style="background:#ffcccc!important;border:2px solid #dc3545!important;" onclick="openCellEdit(${dr.id},${d})"></td>`;
+          }
+        } else if(isOff && isActiveRow && (val===null||val===undefined) && canFillVacancyExpanded(dr.id, d)){
+          // 휴무일이지만 대체가능한 셀 → 초록 표시
+          html += `<td class="day-cell cell-off" style="background:#c8f5c8!important;border:2px solid #28a745!important;cursor:pointer;" onclick="openAssignModalForAvailable(${dr.id},${d})"></td>`;
+        } else if(isOff){
+          html += `<td class="day-cell cell-off" style="background:#fffacd!important;" onclick="openCellEdit(${dr.id},${d})"></td>`;
+        } else if(!isActiveRow){
+          if(isPreDayOff){
+            html += `<td class="day-cell cell-pre-off" style="background:#fff9c4!important;"></td>`;
+          } else {
+            html += `<td class="day-cell" style="background:#f0f0f0;"></td>`;
+          }
+        } else {
+          let cellCls = 'day-cell ';
+          let display = '';
+          let extraStyle = '';
+          let vacancyTitle = '';
+          if(val==='수'){ cellCls+='cell-su'; display='수'; }
+          else if(val!==null&&val!==undefined){
+            cellCls+='cell-work';
+            if(isSat(y,m,d)) cellCls+=' cell-sat';
+            else if(isSun(y,m,d)) cellCls+=' cell-sun';
+            const wk = weeks.find(w=>d>=w.start&&d<=w.end);
+            let weekCount = 0;
+            if(wk){ for(let dd=wk.start;dd<=d;dd++){ const dv=getCellVal(y,m,dr.id,dd); if(dv!==null&&dv!==undefined) weekCount++; } }
+            display = weekCount>0 ? String(weekCount) : '';
+            if(isPreDayOff) cellCls+=' cell-pre-off';
+          } else {
+            if(isSat(y,m,d)) cellCls+='cell-sat';
+            else if(isSun(y,m,d)) cellCls+='cell-sun';
+            if(isPreDayOff) cellCls+=' cell-pre-off';
+            if(isCleared(y,m,dr.id,d)){
+              // 수동 삭제된 공석 → 빨간셀 (모든 운전자 타입)
+              const clearedOrigVal = getClearedVal(y,m,dr.id,d);
+              if(clearedOrigVal === '수'){
+                extraStyle='background:#ffcccc!important;border:2px solid #dc3545!important;color:#dc3545;font-weight:700;';
+                display='수';
+                vacancyTitle = '공석: 편도(수)';
+              } else if(isRegular){
+                extraStyle='background:#ffcccc!important;border:2px solid #dc3545!important;';
+                const D2 = dayOffset(y,m,d);
+                const pos = posOfVehicle(dr.vehicle, D2);
+                vacancyTitle = `공석: 순번${pos} (${dr.vehicle})`;
+              } else {
+                // 오후조/SP 운전자의 순번 공석도 빨간셀
+                extraStyle='background:#ffcccc!important;border:2px solid #dc3545!important;';
+                vacancyTitle = `공석: ${dr.name}`;
+              }
+            } else if(canFillVacancyExpanded(dr.id, d)){
+              // 빨간공석이 아닌 경우에만 초록 대체가능 표시
+              extraStyle='background:#c8f5c8!important;border:2px solid #28a745!important;';
+              vacancyTitle = '대체가능: ' + vacancyMap[d].filter(v=>v.cleared).map(v=>v.isSu?`${v.name}(편도수)`:`${v.name}(${v.vehicle}순번${v.seq})`).join(', ');
+            }
+          }
+          if(!extraStyle){
+            if(isPreDayOff) extraStyle='background:#fff9c4!important;';
+          }
+          if(hol||preHol) cellCls+=' cell-hol';
+          if(note) cellCls+=' cell-note';
+          const titleParts = [];
+          if(note) titleParts.push(note);
+          if(vacancyTitle) titleParts.push(vacancyTitle);
+          const titleAttr = titleParts.length > 0 ? `title="${escHtml(titleParts.join(' | '))}"` : '';
+          const styleAttr = extraStyle ? `style="${extraStyle}"` : '';
+          html += `<td class="${cellCls}" ${titleAttr} ${styleAttr} onclick="openCellEdit(${dr.id},${d})" onmousedown="startDrag(${dr.id},${d})" onmouseenter="updateDrag(${dr.id},${d})">${display}</td>`;
+        }
+      }
+
+      if(subShift==='AM'){
+        const overCls = driverStats.over>0?'over-cell':driverStats.over<0?'under-cell':'sum-cell';
+        html += `<td class="sum-cell" rowspan="2">${driverStats.fullWork}</td>`;
+        html += `<td class="sum-cell" rowspan="2">${driverStats.totalWork}</td>`;
+        html += `<td class="sum-cell" rowspan="2">${driverStats.suCount}</td>`;
+        html += `<td class="${overCls}" rowspan="2">${driverStats.over>0?'+'+driverStats.over:driverStats.over}</td>`;
+        html += `<td class="col-info" rowspan="2" style="min-width:80px;font-size:13px;">${dr.note||''}</td>`;
+      }
+      html += `</tr>`;
+    }
+  });
+
+  // ── 하단 일별 집계 (오전/오후/편도) ──
+  const dayTotals=[];
+  for(let d=1;d<=days;d++){
+    let am=0,pm=0,su=0;
+    activeDrivers.forEach(dr=>{
+      const v=getCellVal(y,m,dr.id,d);
+      if(v==='수') su++;
+      else if(v!==null&&v!==undefined){ if(getShiftForDay(y,m,dr.id,d)==='AM') am++; else pm++; }
+    });
+    dayTotals.push({am,pm,su});
+  }
+  // 정원 기준: 평일 16, 토요일 10, 일요일/공휴일 8
+  const dayExpected=[];
+  for(let d=1;d<=days;d++){
+    if(isSun(y,m,d)||isHoliday(y,m,d)) dayExpected.push(8);
+    else if(isSat(y,m,d)) dayExpected.push(10);
+    else dayExpected.push(16);
+  }
+  const sumSt='font-weight:700;font-size:13px;text-align:center;padding:2px 4px;border:1px solid #b0b8c8;';
+  const sumLabelSt='background:#1a3a6b;color:#fff;font-weight:700;font-size:13px;padding:3px 8px;text-align:right;border:1px solid #aaa;';
+  ['🌅 오전','🌆 오후','🚌 편도(수)'].forEach((label,li)=>{
+    html += `<tr><td colspan="5" style="${sumLabelSt}">${label}</td>`;
+    dayTotals.forEach(({am,pm,su},i)=>{
+      const d=i+1;
+      const hol=isHoliday(y,m,d);
+      const preHol=!hol&&d<days&&isHoliday(y,m,d+1);
+      const val=li===0?am:li===1?pm:su;
+      const expected=dayExpected[i];
+      // 오전/오후만 정원 체크 (편도는 제외)
+      const isBad = li<2 && val!==expected;
+      const bg = isBad ? 'background:#ffcccc;color:#dc3545;' : (hol||preHol) ? 'background:#fff3cd;' : 'background:#d0d8ec;';
+      html += `<td style="${sumSt}${bg}">${val||''}</td>`;
+    });
+    html += `<td colspan="5" style="${sumSt}background:#d0d8ec;"></td></tr>`;
+  });
+
+  html += `</tbody></table>`;
+  document.getElementById('scheduleTable').innerHTML = html;
+
+  // 정원 위반 날짜 헤더 빨간색 표시
+  dayTotals.forEach(({am,pm},i)=>{
+    const d=i+1;
+    const expected=dayExpected[i];
+    if(am!==expected || pm!==expected){
+      const el=document.getElementById('dayHdr'+d);
+      if(el){ el.style.background='#dc3545'; el.style.color='#fff'; }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  통계 카드 렌더링
+// ═══════════════════════════════════════════════════
+function renderStats(){
+  const y=S.year,m=S.month;
+  const active = S.drivers.filter(dr=>dr.active);
+  let overCnt=0, underCnt=0, exactCnt=0;
+  active.forEach(dr=>{
+    const st = calcDriverStats(y,m,dr.id);
+    if(st.over>0) overCnt++;
+    else if(st.over<0) underCnt++;
+    else exactCnt++;
+  });
+  const days = daysInMonth(y,m);
+  document.getElementById('statsCards').innerHTML = `
+    <div class="stat-card"><div class="sc-label">총 직원 수</div><div class="sc-value">${active.length}</div><div class="sc-sub">명</div></div>
+    <div class="stat-card"><div class="sc-label">총 일수</div><div class="sc-value">${days}</div><div class="sc-sub">일</div></div>
+    <div class="stat-card" style="border-left:4px solid #e07800;"><div class="sc-label">초과근무</div><div class="sc-value" style="color:#e07800;">${overCnt}</div><div class="sc-sub">명</div></div>
+    <div class="stat-card" style="border-left:4px solid #c0392b;"><div class="sc-label">미달</div><div class="sc-value" style="color:#c0392b;">${underCnt}</div><div class="sc-sub">명</div></div>
+    <div class="stat-card" style="border-left:4px solid #1e7e34;"><div class="sc-label">만근</div><div class="sc-value" style="color:#1e7e34;">${exactCnt}</div><div class="sc-sub">명</div></div>`;
+}
+
+// ═══════════════════════════════════════════════════
+//  셀 편집 모달
+// ═══════════════════════════════════════════════════
+function openCellEdit(driverId, day){
+  const dr = S.drivers.find(d=>d.id===driverId);
+  if(!dr) return;
+  const y=S.year, m=S.month;
+  const dn = dayName(y,m,day);
+  const isOff = dn === dr.dayOff;
+  const isRegular = dr.vehicle && dr.vehicle!=='SP' && dr.vehicle!=='';
+  const val = getCellVal(y,m,driverId,day);
+
+  // ── 디스패처: 빨간 공석 셀 → 배치 모달 (휴무일 포함 모든 운전자 타입) ──
+  if(isCleared(y,m,driverId,day) && (val===null||val===undefined)){
+    openAssignModalForVacancy(driverId, day);
+    return;
+  }
+  // ── 디스패처: 초록 대체가능 셀 → 공석 선택 모달 ──
+  if((val===null||val===undefined) && canFillVacancyExpanded(driverId, day)){
+    openAssignModalForAvailable(driverId, day);
+    return;
+  }
+
+  // ── 기존 셀 편집 모달 ──
+  S.editCell = {key: schedKey(y,m), driverId, day};
+
+  document.getElementById('cellModalTitle').textContent = `${dr.name} — ${m}월 ${day}일 (${dn})`;
+  document.getElementById('cellModalCtx').innerHTML = `
+    <b>${dr.name}</b> | 차량: ${dr.vehicle||'-'} | 휴무요일: ${dr.dayOff}<br>
+    ${isOff ? '⚠️ <span style="color:#c00;">이 날은 휴무일입니다</span>' : ''}`;
+
+  const currentVal = getCellVal(y,m,driverId,day);
+  const currentNote = getCellNote(y,m,driverId,day);
+  document.getElementById('cellNoteInput').value = currentNote;
+
+  const D = dayOffset(y,m,day);
+  const weeks = getWeeksInMonth(y,m);
+  const wk = weeks.find(w=>day>=w.start&&day<=w.end);
+  let weekCount = 0;
+  if(wk){ for(let dd=wk.start;dd<=day;dd++){ const dv=getCellVal(y,m,driverId,dd); if(dv!==null&&dv!==undefined) weekCount++; } }
+
+  let grid = '';
+  for(let i=1;i<=6;i++){
+    const isSel = weekCount===i && currentVal!==null;
+    grid += `<button class="seq-btn ${isSel?'active-sel':''}" onclick="selectSeqWeekly(${i},${driverId},${day},event)" style="width:56px;height:56px;">
+      <div style="font-size:22px;font-weight:800;">${i}</div>
+    </button>`;
+  }
+  document.getElementById('seqGrid').innerHTML = grid;
+  openModal('cellModal');
+}
+
+// ═══════════════════════════════════════════════════
+//  배치 모달: 빨간 공석 클릭 → 배치 가능 운전자 리스트
+// ═══════════════════════════════════════════════════
+function openAssignModalForVacancy(vacancyDriverId, day){
+  const y=S.year, m=S.month;
+  const dr = S.drivers.find(d=>d.id===vacancyDriverId);
+  if(!dr) return;
+  const dn = dayName(y,m,day);
+  const D = dayOffset(y,m,day);
+  const clearedVal = getClearedVal(y,m,vacancyDriverId,day);
+  const isSuVacancy = clearedVal === '수';
+  // 차량번호: 본인 것 또는 파트너 것
+  const veh = dr.vehicle || (S.drivers.find(p=>p.id===dr.id-1&&p.active)||{}).vehicle || '';
+  const seq = isSuVacancy ? null : (veh && veh!=='SP' ? posOfVehicle(veh, D) : null);
+
+  let titleText;
+  if(isSuVacancy) titleText = `공석 배치 — ${m}월 ${day}일 (${dn}) 편도(수)`;
+  else if(seq) titleText = `공석 배치 — ${m}월 ${day}일 (${dn}) 순번${seq} (${veh})`;
+  else titleText = `공석 배치 — ${m}월 ${day}일 (${dn}) ${dr.name}`;
+  document.getElementById('assignModalTitle').textContent = titleText;
+  document.getElementById('assignModalCtx').innerHTML = `<b>${dr.name}</b>의 ${isSuVacancy?'편도(수) ':''}공석을 채울 수 있는 운전자 목록`;
+
+  const available = getAvailableDriversForDay(day, vacancyDriverId);
+  let html = '';
+  if(available.length===0){
+    html = '<div class="assign-empty">배치 가능한 운전자가 없습니다</div>';
+  } else {
+    available.forEach(a=>{
+      const badgeCls = a.type==='SP'?'badge-sp':a.type==='오후조'?'badge-pair':'badge-regular';
+      const origTag = a.driverId===vacancyDriverId ? '<span style="background:#9c27b0;color:#fff;padding:1px 6px;border-radius:8px;font-size:11px;margin-left:4px;">기존</span>' : '';
+      html += `<div class="assign-item" onclick="performAssignment(${a.driverId},${day},${vacancyDriverId})">
+        <span class="ai-name">${a.name}<span class="ai-badge ${badgeCls}">${a.type}</span>${origTag}</span>
+        <span class="ai-info">차량:${a.vehicle} | 근무:${a.totalWork}/${a.fullWork} | 휴무:${a.dayOff}</span>
+      </div>`;
+    });
+  }
+  document.getElementById('assignModalList').innerHTML = html;
+  openModal('assignModal');
+}
+
+// ═══════════════════════════════════════════════════
+//  배치 모달: 초록 셀 클릭 → 배치할 공석 리스트
+// ═══════════════════════════════════════════════════
+function openAssignModalForAvailable(fillerDriverId, day){
+  const y=S.year, m=S.month;
+  const dr = S.drivers.find(d=>d.id===fillerDriverId);
+  if(!dr) return;
+  const dn = dayName(y,m,day);
+
+  document.getElementById('assignModalTitle').textContent = `배치 선택 — ${dr.name} (${m}월 ${day}일 ${dn})`;
+  document.getElementById('assignModalCtx').innerHTML = `<b>${dr.name}</b>을(를) 배치할 수 있는 공석 목록`;
+
+  const allVacancies = getVacanciesForDay(day);
+  // 시간대 호환성 필터: AM공석 → AM필러만, PM공석 → 누구든 가능
+  const fillerShift = getShiftForDay(y,m,fillerDriverId,day);
+  const vacancies = allVacancies.filter(v=>{
+    const vacShift = getShiftForDay(y,m,v.driverId,day);
+    if(vacShift==='AM' && fillerShift!=='AM') return false;
+    return true;
+  });
+  let html = '';
+  if(vacancies.length===0){
+    html = '<div class="assign-empty">배치 가능한 공석이 없습니다</div>';
+  } else {
+    vacancies.forEach(v=>{
+      const badge = v.isSu ? '<span class="ai-badge badge-sp">편도(수)</span>' : `<span class="ai-badge badge-regular">순번${v.seq}</span>`;
+      const info = v.isSu ? '편도(수합) 배정' : `차량:${v.vehicle}`;
+      html += `<div class="assign-item" onclick="performAssignment(${fillerDriverId},${day},${v.driverId})">
+        <span class="ai-name">${v.name}의 공석${badge}</span>
+        <span class="ai-info">${info}</span>
+      </div>`;
+    });
+  }
+  document.getElementById('assignModalList').innerHTML = html;
+  openModal('assignModal');
+}
+
+// ═══════════════════════════════════════════════════
+//  배치 실행
+// ═══════════════════════════════════════════════════
+function performAssignment(fillerDriverId, day, vacancyDriverId){
+  const y=S.year, m=S.month;
+  const vacDr = S.drivers.find(d=>d.id===vacancyDriverId);
+  const fillDr = S.drivers.find(d=>d.id===fillerDriverId);
+  if(!vacDr||!fillDr) return;
+
+  // 원래 삭제된 값 확인: '수'면 수합 배치, 아니면 순번 배치
+  const clearedVal = getClearedVal(y,m,vacancyDriverId,day);
+  const D = dayOffset(y,m,day);
+  const seq = posOfVehicle(vacDr.vehicle, D);
+  const assignVal = (clearedVal === '수') ? '수' : seq;
+
+  // 수합 3회 제한 체크
+  if(assignVal === '수'){
+    const fillerStats = calcDriverStats(y,m,fillerDriverId);
+    if(fillerStats.suCount >= 3){
+      alert(`${fillDr.name}은(는) 이미 수합 ${fillerStats.suCount}회입니다. (최대 3회)`);
+      return;
+    }
+  }
+
+  // 시간대 오버라이드 결정: AM필러가 PM공석을 채우면 해당 일 PM으로 오버라이드
+  const fillerOrigShift = getShiftForDay(y,m,fillerDriverId,day);
+  const vacShift = getShiftForDay(y,m,vacancyDriverId,day);
+  const needOverride = (fillerOrigShift==='AM' && vacShift==='PM');
+
+  // history에 filler의 이전 상태 저장 (wasCleared 포함)
+  const oldFillerVal = getCellVal(y,m,fillerDriverId,day);
+  const oldFillerNote = getCellNote(y,m,fillerDriverId,day);
+  S.history.push({key:schedKey(y,m), driverId:fillerDriverId, day, oldVal:oldFillerVal, oldNote:oldFillerNote, wasCleared:false, hadOverride:false});
+
+  // history에 vacancy의 cleared 상태 저장
+  S.history.push({key:schedKey(y,m), driverId:vacancyDriverId, day, oldVal:null, oldNote:'', wasCleared:true, hadOverride:false});
+
+  if(S.history.length>100){ S.history.shift(); S.history.shift(); }
+
+  // filler에게 배정 (수합이면 '수', 아니면 순번)
+  setCellVal(y,m,fillerDriverId,day,assignVal);
+  // vacancy의 빨간 공석 해소
+  unmarkCleared(y,m,vacancyDriverId,day);
+
+  // AM필러 + PM공석 → shiftOverrides에 PM 기록
+  if(needOverride){
+    const oKey = schedKey(y,m);
+    if(!S.shiftOverrides[oKey]) S.shiftOverrides[oKey]={};
+    S.shiftOverrides[oKey][fillerDriverId+':'+day] = 'PM';
+    // history에 오버라이드 기록 (undo 시 해소용)
+    S.history[S.history.length-2].hadOverride = true;
+    S.history[S.history.length-2].overrideDriverId = fillerDriverId;
+    S.history[S.history.length-2].overrideDay = day;
+  }
+
+  closeModal('assignModal');
+  saveToStorage();
+  renderMonthlySchedule();
+  renderStats();
+  updateUndoBtn();
+  const label = (clearedVal === '수') ? '편도(수)' : `순번${seq}(${vacDr.vehicle})`;
+  showStatus(`${fillDr.name} → ${label} 배치 완료`);
+}
+
+let _pendingCellVal = null;
+function selectSeq(n,e){
+  _pendingCellVal = n;
+  document.querySelectorAll('.seq-btn').forEach(b=>b.classList.remove('active-sel'));
+  (e||event).currentTarget.classList.add('active-sel');
+}
+// 팝업 1~6 버튼 클릭 시: 내부적으로 차량 순번(1~16) 자동 결정
+function selectSeqWeekly(weekNum, driverId, day, e){
+  const dr = S.drivers.find(d=>d.id===driverId);
+  let storeVal;
+  if(dr && dr.vehicle && dr.vehicle!=='SP' && dr.vehicle!==''){
+    // 고정 차량: 해당 날짜의 차량 순번 사용
+    const D = dayOffset(S.year, S.month, day);
+    storeVal = posOfVehicle(dr.vehicle, D) || weekNum;
+  } else if(dr && (!dr.vehicle||dr.vehicle==='')){
+    // 페어: 파트너와 동일 순번
+    const pairDr = S.drivers.find(p=>p.id===dr.id-1&&p.active);
+    const pairVal = pairDr ? getCellVal(S.year,S.month,pairDr.id,day) : null;
+    storeVal = pairVal !== null ? pairVal : weekNum;
+  } else {
+    storeVal = weekNum; // SP: 주간 카운트 저장
+  }
+  _pendingCellVal = storeVal;
+  document.querySelectorAll('.seq-btn').forEach(b=>b.classList.remove('active-sel'));
+  (e||event).currentTarget.classList.add('active-sel');
+}
+function setCell(v,e){
+  _pendingCellVal = v;
+  const evt = e||event;
+  if(v===null){
+    document.querySelectorAll('.seq-btn').forEach(b=>b.classList.remove('active-sel'));
+    document.querySelectorAll('.sp-btn,.clear-btn').forEach(b=>b.classList.remove('active-sel'));
+    evt.currentTarget.classList.add('active-sel');
+  } else {
+    document.querySelectorAll('.seq-btn').forEach(b=>b.classList.remove('active-sel'));
+    evt.currentTarget.classList.add('active-sel');
+  }
+}
+
+function saveCell(){
+  if(!S.editCell) {closeModal('cellModal');return;}
+  const {driverId, day} = S.editCell;
+  const newNote = document.getElementById('cellNoteInput').value.trim();
+  const oldVal = getCellVal(S.year,S.month,driverId,day);
+  const oldNote = getCellNote(S.year,S.month,driverId,day);
+
+  // push to history
+  S.history.push({key:schedKey(S.year,S.month),driverId,day,oldVal,oldNote});
+  if(S.history.length>100) S.history.shift();
+
+  if(_pendingCellVal !== undefined && _pendingCellVal !== null){
+    setCellVal(S.year,S.month,driverId,day,_pendingCellVal);
+    unmarkCleared(S.year,S.month,driverId,day);
+    // 값이 설정되면 → 해당 날 빨간 공석 하나 자동 해소 (모든 운전자 타입)
+    if(oldVal===null){
+      const mcKey = schedKey(S.year,S.month);
+      if(S.manuallyCleared[mcKey]){
+        const toRemove = Object.keys(S.manuallyCleared[mcKey]).find(k=>k.endsWith(':'+day));
+        if(toRemove) delete S.manuallyCleared[mcKey][toRemove];
+      }
+    }
+  } else if(_pendingCellVal === null){
+    setCellVal(S.year,S.month,driverId,day,null);
+    markCleared(S.year,S.month,driverId,day,oldVal);
+    // shiftOverride 해소
+    const oKey = schedKey(S.year,S.month);
+    if(S.shiftOverrides[oKey]) delete S.shiftOverrides[oKey][driverId+':'+day];
+  }
+  setCellNote(S.year,S.month,driverId,day,newNote);
+
+  _pendingCellVal = undefined;
+  closeModal('cellModal');
+  saveToStorage();
+  renderMonthlySchedule();
+  renderStats();
+  updateUndoBtn();
+}
+
+// ═══════════════════════════════════════════════════
+//  실행 취소
+// ═══════════════════════════════════════════════════
+function undoAction(){
+  if(S.history.length===0) return;
+  const h = S.history.pop();
+  setCellVal(S.year,S.month,h.driverId,h.day,h.oldVal);
+  setCellNote(S.year,S.month,h.driverId,h.day,h.oldNote);
+  // wasCleared 플래그: performAssignment에서 해소된 공석 복구
+  if(h.wasCleared){
+    markCleared(S.year,S.month,h.driverId,h.day);
+  } else {
+    unmarkCleared(S.year,S.month,h.driverId,h.day);
+  }
+  // shiftOverride 해소
+  if(h.hadOverride){
+    const oKey = schedKey(S.year,S.month);
+    if(S.shiftOverrides[oKey]) delete S.shiftOverrides[oKey][h.overrideDriverId+':'+h.overrideDay];
+  }
+  saveToStorage();
+  renderMonthlySchedule();
+  renderStats();
+  updateUndoBtn();
+  showStatus('실행 취소됨');
+}
+function updateUndoBtn(){
+  const has = S.history.length>0;
+  ['undoBtn','undoBtn2'].forEach(id=>{
+    const b = document.getElementById(id);
+    if(b) b.disabled = !has;
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  드래그 선택 (다중 셀)
+// ═══════════════════════════════════════════════════
+function startDrag(driverId,day){
+  S.dragStart = {driverId,day};
+  S.dragCells = [{driverId,day}];
+}
+function updateDrag(driverId,day){
+  if(!S.dragStart) return;
+  if(driverId===S.dragStart.driverId && day !== S.dragStart.day){
+    const mn = Math.min(S.dragStart.day,day), mx = Math.max(S.dragStart.day,day);
+    S.dragCells = [];
+    for(let d=mn;d<=mx;d++) S.dragCells.push({driverId,day:d});
+  }
+}
+document.addEventListener('mouseup',()=>{
+  if(S.dragStart && S.dragCells.length>1){
+    openRangeModal();
+  }
+  S.dragStart = null;
+});
+
+function openRangeModal(){
+  const first = S.dragCells[0];
+  const dr = S.drivers.find(d=>d.id===first.driverId);
+  if(!dr) return;
+  const days = S.dragCells.map(c=>c.day);
+  document.getElementById('rangeCtx').innerHTML =
+    `<b>${dr.name}</b> — ${Math.min(...days)}일~${Math.max(...days)}일 (${S.dragCells.length}일)`;
+  openModal('rangeModal');
+}
+
+function rangeAction(type){
+  S.dragCells.forEach(({driverId,day})=>{
+    const oldVal = getCellVal(S.year,S.month,driverId,day);
+    const oldNote = getCellNote(S.year,S.month,driverId,day);
+    S.history.push({key:schedKey(S.year,S.month),driverId,day,oldVal,oldNote});
+    if(type==='clear'){
+      setCellVal(S.year,S.month,driverId,day,null);
+      setCellNote(S.year,S.month,driverId,day,'');
+    } else {
+      setCellVal(S.year,S.month,driverId,day,null);
+      setCellNote(S.year,S.month,driverId,day,type);
+    }
+    markCleared(S.year,S.month,driverId,day,oldVal);
+    // shiftOverride 해소
+    const oKey = schedKey(S.year,S.month);
+    if(S.shiftOverrides[oKey]) delete S.shiftOverrides[oKey][driverId+':'+day];
+  });
+  closeModal('rangeModal');
+  S.dragCells=[];
+  saveToStorage();
+  renderMonthlySchedule();
+  renderStats();
+  updateUndoBtn();
+}
+
+
+// ═══════════════════════════════════════════════════
+//  주간 배차표 렌더링
+// ═══════════════════════════════════════════════════
+function getWeeksInMonth(y,m){
+  const days = daysInMonth(y,m);
+  const weeks = [];
+  let weekNum = 1, start = 1;
+  while(start<=days){
+    const startDow = dayOfWeek(y,m,start);
+    // 주 시작은 월요일(1)
+    let end = start;
+    // 이번 주 마지막 날 (일요일 또는 월말)
+    while(end<days && dayOfWeek(y,m,end+1)!==1) end++;
+    weeks.push({week:weekNum, start, end});
+    weekNum++;
+    start = end+1;
+  }
+  return weeks;
+}
+
+function renderWeekTabs(){
+  const weeks = getWeeksInMonth(S.year,S.month);
+  let html = '';
+  weeks.forEach(w=>{
+    const cls = S.currentWeek===w.week ? 'active':'';
+    html += `<button class="week-tab ${cls}" onclick="selectWeek(${w.week})">${S.month}월 ${w.week}주 (${w.start}일~${w.end}일)</button>`;
+  });
+  document.getElementById('weekTabs').innerHTML = html;
+}
+
+function selectWeek(n){
+  S.currentWeek = n;
+  renderWeekTabs();
+  renderWeeklyDispatch();
+}
+
+function renderWeeklyDispatch(){
+  const y=S.year,m=S.month;
+  const weeks = getWeeksInMonth(y,m);
+  const wk = weeks.find(w=>w.week===S.currentWeek);
+  if(!wk){document.getElementById('weeklyDispatchTable').innerHTML='';return;}
+
+  document.getElementById('weeklyTitle').textContent = `${y}년 ${m}월 ${S.currentWeek}주차 배차표`;
+
+  let html = `<div style="overflow-x:auto;"><table class="dispatch-table">`;
+
+  for(let d=wk.start;d<=wk.end;d++){
+    const dn = dayName(y,m,d);
+    const D = dayOffset(y,m,d);
+
+    // Day header
+    html += `<tr><td class="dh-day" colspan="9">📅 ${m}월 ${d}일 (${dn})</td></tr>`;
+    html += `<tr>
+      <td class="dh-col">순번</td><td class="dh-col">차량</td>
+      <td class="dh-col">오전 근무자</td><td class="dh-col">1회차</td><td class="dh-col">2회차</td>
+      <td class="dh-col">오후 근무자</td><td class="dh-col">1회차</td><td class="dh-col">2회차</td><td class="dh-col">3회차</td>
+    </tr>`;
+
+    const maxSeq = maxSeqForDay(y,m,d);
+    const dayTimes = getScheduleTimes(y,m,d);
+    for(let seq=1;seq<=maxSeq;seq++){
+      const veh = vehicleAtPos(seq,D);
+      const times = dayTimes[seq-1]||EMPTY_TIMES;
+      // 해당 순번 배정된 운전자 찾기 (차량 고정 드라이버 우선, SP 보조)
+      const assignedDrivers = S.drivers.filter(dr=>{
+        if(!dr.active) return false;
+        const v = getCellVal(y,m,dr.id,d);
+        return v===seq || v===String(seq);
+      });
+      const amDriver = assignedDrivers.find(dr=>getShiftForDay(y,m,dr.id,d)==='AM')||assignedDrivers[0];
+      const pmDriver = assignedDrivers.find(dr=>getShiftForDay(y,m,dr.id,d)==='PM')||assignedDrivers[1];
+
+      html += `<tr>
+        <td class="dam-row"><b>${seq}</b></td>
+        <td class="dam-row">${veh}</td>
+        <td class="dam-row">${amDriver?amDriver.name:''}</td>
+        <td class="dam-row">${times.am1}</td>
+        <td class="dam-row">${times.am2}</td>
+        <td class="dpm-row">${pmDriver?pmDriver.name:''}</td>
+        <td class="dpm-row">${times.pm1}</td>
+        <td class="dpm-row">${times.pm2}</td>
+        <td class="dpm-row">${times.pm3||'-'}</td>
+      </tr>`;
+    }
+
+    // 평일 오전 편도(수) 차량 — 월~금 매일
+    if(!isSat(y,m,d) && !isSun(y,m,d)){
+      const suDrivers = S.drivers.filter(dr=>{ if(!dr.active) return false; return getCellVal(y,m,dr.id,d)==='수'; });
+      html += `<tr><td class="dw-row" colspan="9"><b>🟢 평일 편도(수) 차량 — 근무자: ${suDrivers.map(d=>d.name).join(', ')||'미배정'}</b></td></tr>`;
+      WED_VEHICLES.forEach((wv,wi)=>{
+        const assignedName = suDrivers[wi] ? suDrivers[wi].name : '미배정';
+        html += `<tr>
+          <td class="dw-row">수</td><td class="dw-row">${wv.num}</td>
+          <td class="dw-row" colspan="2">${assignedName}</td>
+          <td class="dw-row">${wv.am1}</td><td class="dw-row">${wv.am2}</td>
+          <td class="dw-row" colspan="3">편도(오전)</td>
+        </tr>`;
+      });
+    }
+
+    html += `<tr><td colspan="9" style="height:8px;background:#f0f2f5;border:none;"></td></tr>`;
+  }
+
+  html += `</table></div>`;
+  document.getElementById('weeklyDispatchTable').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════
+//  직원 관리 렌더링
+// ═══════════════════════════════════════════════════
+function renderEmployeeTable(){
+  const active = S.drivers.filter(dr=>dr.active);
+  let html = `<table class="emp-table"><thead><tr>
+    <th>번호</th><th>성명</th><th>차량번호</th><th>휴무요일</th><th>휴무요일(-1)</th><th>특이사항</th><th>편집</th>
+  </tr></thead><tbody>`;
+
+  active.forEach(dr=>{
+    let empVeh = dr.vehicle || '';
+    if(!empVeh || empVeh===''){
+      const p = S.drivers.find(pp=>pp.id===dr.id-1&&pp.active);
+      empVeh = p ? (p.vehicle||'-') : '-';
+    }
+    html += `<tr>
+      <td>${dr.seq||dr.id}</td>
+      <td><b>${dr.name}</b></td>
+      <td>${empVeh}</td>
+      <td>${dr.dayOff}</td>
+      <td>${dr.preDayOff||DAYNAMES[(DAYNAMES.indexOf(dr.dayOff)+6)%7]}</td>
+      <td style="font-size:14px;color:#666;">${dr.note||''}</td>
+      <td>
+        <button class="btn btn-info btn-sm" onclick="openEditEmployee(${dr.id})">✏️수정</button>
+        <button class="btn btn-danger btn-sm" onclick="deactivateEmployee(${dr.id})" style="margin-left:4px;">🗑️</button>
+      </td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+
+  // ── 비활성(삭제) 직원 하단 표시 ──
+  const inactive = S.drivers.filter(dr=>!dr.active);
+  if(inactive.length > 0){
+    html += `<h3 style="margin-top:24px;color:#888;border-bottom:2px solid #ddd;padding-bottom:8px;">비활성 직원 (${inactive.length}명)</h3>`;
+    html += `<table class="emp-table" style="opacity:0.7;"><thead><tr>
+      <th>번호</th><th>성명</th><th>차량번호</th><th>휴무요일</th><th>휴무요일(-1)</th><th>특이사항</th><th>관리</th>
+    </tr></thead><tbody>`;
+    inactive.forEach(dr=>{
+      let iVeh = dr.vehicle || '';
+      if(!iVeh || iVeh===''){
+        const ip = S.drivers.find(pp=>pp.id===dr.id-1);
+        iVeh = ip ? (ip.vehicle||'-') : '-';
+      }
+      html += `<tr style="background:#f5f5f5;">
+        <td>${dr.seq||dr.id}</td>
+        <td><b style="color:#999;">${dr.name}</b></td>
+        <td>${iVeh}</td>
+        <td>${dr.dayOff}</td>
+        <td>${dr.preDayOff||DAYNAMES[(DAYNAMES.indexOf(dr.dayOff)+6)%7]}</td>
+        <td style="font-size:14px;color:#999;">${dr.note||''}</td>
+        <td>
+          <button class="btn btn-success btn-sm" onclick="reactivateEmployee(${dr.id})">재활성화</button>
+          <button class="btn btn-danger btn-sm" onclick="permanentDeleteEmployee(${dr.id})" style="margin-left:4px;">완전삭제</button>
+        </td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+
+  document.getElementById('employeeTable').innerHTML = html;
+}
+
+function autoFillPreDayOff(){
+  const dayOff = document.getElementById('empDayOff').value;
+  const idx = DAYNAMES.indexOf(dayOff);
+  document.getElementById('empPreDayOff').value = DAYNAMES[(idx+6)%7];
+}
+
+function openAddEmployee(){
+  document.getElementById('empId').value = '';
+  document.getElementById('empSeq').value = '';
+  document.getElementById('empName').value = '';
+  document.getElementById('empVehicle').value = '';
+  document.getElementById('empDayOff').value = '월';
+  document.getElementById('empPreDayOff').value = '일';
+  document.getElementById('empNote').value = '';
+  document.getElementById('empModalTitle').textContent = '직원 추가';
+  openModal('empModal');
+}
+
+function openEditEmployee(id){
+  const dr = S.drivers.find(d=>d.id===id);
+  if(!dr) return;
+  document.getElementById('empId').value = id;
+  document.getElementById('empSeq').value = dr.seq||dr.id;
+  document.getElementById('empName').value = dr.name;
+  document.getElementById('empVehicle').value = dr.vehicle||'';
+  document.getElementById('empDayOff').value = dr.dayOff;
+  document.getElementById('empPreDayOff').value = dr.preDayOff || DAYNAMES[(DAYNAMES.indexOf(dr.dayOff)+6)%7];
+  document.getElementById('empNote').value = dr.note||'';
+  document.getElementById('empModalTitle').textContent = `직원 수정 — ${dr.name}`;
+  openModal('empModal');
+}
+
+function saveEmployee(){
+  const id = document.getElementById('empId').value;
+  const name = document.getElementById('empName').value.trim();
+  if(!name){alert('성명을 입력해주세요.');return;}
+  const seqVal = parseInt(document.getElementById('empSeq').value) || null;
+  const veh = document.getElementById('empVehicle').value.trim();
+  const dayOff = document.getElementById('empDayOff').value;
+  const preDayOff = document.getElementById('empPreDayOff').value;
+  const note = document.getElementById('empNote').value.trim();
+  // shift는 차량 유무로 자동 결정
+  const shift = (veh && veh!=='' && veh!=='SP') ? '오전' : (!veh || veh==='') ? '오후' : '오전';
+
+  if(id){
+    const dr = S.drivers.find(d=>d.id===parseInt(id));
+    if(dr){
+      dr.name=name; dr.vehicle=veh; dr.dayOff=dayOff; dr.preDayOff=preDayOff;
+      dr.shift=shift; dr.note=note;
+      if(seqVal) dr.seq = seqVal;
+    }
+  } else {
+    const newId = Math.max(...S.drivers.map(d=>d.id),0)+1;
+    S.drivers.push({id:newId, seq:seqVal||newId, name,vehicle:veh,dayOff,preDayOff,shift,note,active:true});
+  }
+  S.drivers.sort((a,b)=>(a.seq||a.id)-(b.seq||b.id));
+  closeModal('empModal');
+  saveToStorage();
+  renderEmployeeTable();
+  renderRotationGrid();
+  renderMonthlySchedule();
+  renderStats();
+  showStatus('직원 정보 저장됨');
+}
+
+function deactivateEmployee(id){
+  showConfirm('이 직원을 비활성화하시겠습니까?', ()=>{
+    const dr = S.drivers.find(d=>d.id===id);
+    if(dr) dr.active=false;
+    saveToStorage();
+    renderEmployeeTable();
+    showStatus('직원 비활성화됨');
+  });
+}
+
+function reactivateEmployee(id){
+  showConfirm('이 직원을 재활성화하시겠습니까?', ()=>{
+    const dr = S.drivers.find(d=>d.id===id);
+    if(dr) dr.active=true;
+    saveToStorage();
+    renderEmployeeTable();
+    renderMonthlySchedule();
+    renderStats();
+    showStatus('직원 재활성화됨');
+  });
+}
+
+function permanentDeleteEmployee(id){
+  showConfirm('이 직원을 완전히 삭제하시겠습니까?<br><small>이 작업은 되돌릴 수 없습니다.</small>', ()=>{
+    S.drivers = S.drivers.filter(d=>d.id!==id);
+    saveToStorage();
+    renderEmployeeTable();
+    showStatus('직원 영구 삭제됨');
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  차량 관리 렌더링
+// ═══════════════════════════════════════════════════
+function renderVehicleTable(){
+  let html = `<table class="emp-table" style="max-width:800px;"><thead>
+    <tr><th>순번</th><th>차량번호</th><th>배정운전자1</th><th>배정운전자2</th><th>비고</th><th>관리</th></tr>
+  </thead><tbody>`;
+  S.baseOrder.forEach((veh,i)=>{
+    const curMain = S.drivers.find(d=>d.vehicle===veh&&d.active&&d.id%2===1);
+    const curPair = S.drivers.find(d=>d.vehicle===veh&&d.active&&d.id%2===0);
+    // 오전 운전자(홀수id) 셀렉트
+    let mainOpts = '<option value="">미배정</option>';
+    S.drivers.filter(d=>d.active&&d.id%2===1).forEach(d=>{
+      const oth = d.vehicle&&d.vehicle!==''&&d.vehicle!=='SP'&&d.vehicle!==veh;
+      const lb = `${d.name}${oth?' ['+d.vehicle+']':''}`;
+      mainOpts += `<option value="${d.id}"${curMain&&curMain.id===d.id?' selected':''}>${lb}</option>`;
+    });
+    // 오후 운전자(짝수id) 셀렉트
+    let pairOpts = '<option value="">미배정</option>';
+    S.drivers.filter(d=>d.active&&d.id%2===0).forEach(d=>{
+      const oth = d.vehicle&&d.vehicle!==''&&d.vehicle!=='SP'&&d.vehicle!==veh;
+      const lb = `${d.name}${oth?' ['+d.vehicle+']':''}`;
+      pairOpts += `<option value="${d.id}"${curPair&&curPair.id===d.id?' selected':''}>${lb}</option>`;
+    });
+    html += `<tr>
+      <td><b>${i+1}</b></td>
+      <td><b>${veh}</b></td>
+      <td><select class="form-select" style="font-size:13px;padding:4px 6px;" onchange="assignVehicleDriver(${i},'main',this.value)">${mainOpts}</select></td>
+      <td><select class="form-select" style="font-size:13px;padding:4px 6px;" onchange="assignVehicleDriver(${i},'pair',this.value)">${pairOpts}</select></td>
+      <td style="font-size:14px;color:#777;">${veh==='SP'?'예비차량':''}</td>
+      <td><button class="btn btn-info btn-sm" onclick="openEditVehicle(${i},'${veh}')">✏️수정</button></td>
+    </tr>`;
+  });
+  // 수요 전용 차량
+  WED_VEHICLES.forEach(wv=>{
+    html += `<tr>
+      <td style="background:#e8ffe8;">수요</td>
+      <td style="background:#e8ffe8;"><b>${wv.num}</b></td>
+      <td style="background:#e8ffe8;" colspan="2">편도(수) 차량</td>
+      <td style="background:#e8ffe8;"></td>
+      <td style="background:#e8ffe8;"></td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+
+  // 운행 시각표
+  html += `<br><h3 style="color:#1a3a6b;margin-bottom:8px;">📋 순번별 운행 시각표</h3>`;
+  html += `<table class="emp-table" style="max-width:700px;"><thead>
+    <tr><th>순번</th><th>오전1회차</th><th>오전2회차</th><th>오후1회차</th><th>오후2회차</th><th>오후3회차</th></tr>
+  </thead><tbody>`;
+  SCHEDULE_TIMES.forEach(t=>{
+    html += `<tr>
+      <td><b>${t.seq}</b></td>
+      <td>${t.am1}</td><td>${t.am2}</td>
+      <td>${t.pm1}</td><td>${t.pm2}</td><td>${t.pm3||'—'}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+  document.getElementById('vehicleTable').innerHTML = html;
+}
+
+function openEditVehicle(idx, currentVeh){
+  document.getElementById('vehEditIdx').value = idx;
+  document.getElementById('vehEditNum').value = currentVeh;
+  document.getElementById('vehEditTitle').textContent = `차량번호 수정 — 순번${idx+1}`;
+  openModal('vehEditModal');
+}
+
+function saveVehicleEdit(){
+  const idx = parseInt(document.getElementById('vehEditIdx').value);
+  const newVeh = document.getElementById('vehEditNum').value.trim();
+  if(!newVeh){alert('차량번호를 입력해주세요.');return;}
+  const oldVeh = S.baseOrder[idx];
+  if(oldVeh === newVeh){closeModal('vehEditModal');return;}
+  // baseOrder 업데이트
+  S.baseOrder[idx] = newVeh;
+  // 해당 차량에 배정된 운전자들의 vehicle도 업데이트
+  S.drivers.forEach(dr=>{
+    if(dr.vehicle === oldVeh) dr.vehicle = newVeh;
+  });
+  // DEFAULT_BASE_VEHICLES에도 있으면 갱신 (런타임만, 상수 변경 불가하므로 배열 교체)
+  const defIdx = DEFAULT_BASE_VEHICLES.indexOf(oldVeh);
+  if(defIdx >= 0) DEFAULT_BASE_VEHICLES[defIdx] = newVeh;
+  closeModal('vehEditModal');
+  saveToStorage();
+  renderVehicleTable();
+  renderRotationGrid();
+  renderEmployeeTable();
+  renderMonthlySchedule();
+  renderStats();
+  showStatus(`차량번호 ${oldVeh} → ${newVeh} 변경됨`);
+}
+
+function assignVehicleDriver(idx, role, driverIdStr){
+  const veh = S.baseOrder[idx];
+  const isMain = role==='main';
+  const newId = driverIdStr ? parseInt(driverIdStr) : null;
+  // 이 차량의 해당 역할 기존 배정 해제
+  S.drivers.forEach(dr=>{
+    if(dr.vehicle===veh && (isMain ? dr.id%2===1 : dr.id%2===0)){
+      dr.vehicle = '';
+    }
+  });
+  // 새 운전자 배정
+  if(newId){
+    const dr = S.drivers.find(d=>d.id===newId);
+    if(dr){
+      // 다른 차량에 이미 배정된 경우 해제
+      if(dr.vehicle && dr.vehicle!=='' && dr.vehicle!==veh) dr.vehicle = '';
+      dr.vehicle = veh;
+    }
+  }
+  saveToStorage();
+  renderVehicleTable();
+  renderRotationGrid();
+  renderEmployeeTable();
+  renderMonthlySchedule();
+  showStatus(`차량 ${veh} ${isMain?'운전자1':'운전자2'} 변경됨`);
+}
+
+// ═══════════════════════════════════════════════════
+//  설정 렌더링
+// ═══════════════════════════════════════════════════
+function renderRotationGrid(){
+  document.getElementById('baseDateInput').value = S.baseDate;
+
+  let html = '';
+  for(let i=0;i<16;i++){
+    const veh = S.baseOrder[i];
+    const opts = DEFAULT_BASE_VEHICLES.map(v=>`<option value="${v}" ${v===veh?'selected':''}>${v}</option>`).join('');
+    html += `<div class="rot-cell">
+      <span class="rot-pos">${i+1}</span>
+      <select class="rot-select" id="rot_${i}" onchange="updateRotation(${i},this.value)">${opts}</select>
+    </div>`;
+  }
+  document.getElementById('rotationGrid').innerHTML = html;
+
+}
+
+function updateRotation(idx, val){
+  S.baseOrder[idx] = val;
+}
+
+function saveSettings(){
+  S.baseDate = document.getElementById('baseDateInput').value;
+  for(let i=0;i<16;i++){
+    const sel = document.getElementById(`rot_${i}`);
+    if(sel) S.baseOrder[i] = sel.value;
+  }
+  saveToStorage();
+  renderMonthlySchedule();
+  renderStats();
+  showStatus('설정 저장됨');
+  alert('설정이 저장되었습니다. 근무표가 업데이트됩니다.');
+}
+
+function resetToDefault(){
+  showConfirm('로테이션을 기본값으로 초기화하시겠습니까?', ()=>{
+    S.baseOrder = [...DEFAULT_BASE_VEHICLES];
+    S.baseDate = '2026-01-01';
+    renderRotationGrid();
+    saveToStorage();
+    showStatus('기본값으로 초기화됨');
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  월/탭 전환
+// ═══════════════════════════════════════════════════
+function changeMonth(delta){
+  S.month += delta;
+  if(S.month>12){S.month=1;S.year++;}
+  if(S.month<1){S.month=12;S.year--;}
+  S.currentWeek = 1;
+  S.history = [];
+  updateUndoBtn();
+  refreshAll();
+}
+function goToToday(){
+  const now = new Date();
+  S.year = now.getFullYear();
+  S.month = now.getMonth()+1;
+  refreshAll();
+}
+function switchTab(tab){
+  S.activeTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.getElementById('tab-content-'+tab).classList.add('active');
+  if(tab==='monthly'){renderMonthlySchedule();renderStats();}
+  else if(tab==='weekly'){renderWeekTabs();renderWeeklyDispatch();}
+  else if(tab==='employees'){renderEmployeeTable();}
+  else if(tab==='vehicles'){renderVehicleTable();}
+  else if(tab==='settings'){renderRotationGrid();}
+}
+
+function refreshAll(){
+  document.getElementById('monthDisplay').textContent = `${S.year}년 ${S.month}월`;
+  if(S.activeTab==='monthly'){renderMonthlySchedule();renderStats();}
+  else if(S.activeTab==='weekly'){renderWeekTabs();renderWeeklyDispatch();}
+}
+
+// ═══════════════════════════════════════════════════
+//  모달 유틸리티
+// ═══════════════════════════════════════════════════
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');if(id==='cellModal'){_pendingCellVal=undefined;}}
+// 모달 외부 클릭 시 닫기
+document.querySelectorAll('.modal-bg').forEach(bg=>{
+  bg.addEventListener('click',e=>{if(e.target===bg) bg.classList.remove('open');});
+});
+
+let _confirmCb = null;
+function showConfirm(msg, cb){
+  _confirmCb = cb;
+  document.getElementById('confirmMsg').innerHTML = msg;
+  openModal('confirmModal');
+}
+document.getElementById('confirmOkBtn').onclick = ()=>{
+  closeModal('confirmModal');
+  if(_confirmCb){_confirmCb();_confirmCb=null;}
+};
+
+// ═══════════════════════════════════════════════════
+//  Firebase + localStorage 저장/불러오기
+// ═══════════════════════════════════════════════════
+function _getStateSnapshot(){
+  return {
+    drivers: S.drivers, baseDate: S.baseDate, baseOrder: S.baseOrder,
+    scheduleData: S.scheduleData, notesData: S.notesData,
+    manuallyCleared: S.manuallyCleared, shiftOverrides: S.shiftOverrides
+  };
+}
+function _applyState(data){
+  if(data.drivers) S.drivers = data.drivers;
+  if(data.baseDate) S.baseDate = data.baseDate;
+  if(data.baseOrder) S.baseOrder = data.baseOrder;
+  if(data.scheduleData) S.scheduleData = data.scheduleData;
+  if(data.notesData) S.notesData = data.notesData;
+  if(data.manuallyCleared) S.manuallyCleared = data.manuallyCleared;
+  if(data.shiftOverrides) S.shiftOverrides = data.shiftOverrides;
+}
+function _fixStringNumbers(){
+  Object.values(S.scheduleData).forEach(monthData=>{
+    Object.values(monthData).forEach(driverData=>{
+      Object.keys(driverData).forEach(day=>{
+        const v = driverData[day];
+        if(v !== null && v !== '수' && typeof v === 'string' && !isNaN(parseInt(v))){
+          driverData[day] = parseInt(v);
+        }
+      });
+    });
+  });
+}
+
+function saveToStorage(){
+  try{
+    const json = JSON.stringify(_getStateSnapshot());
+    // localStorage 백업
+    localStorage.setItem('m5121_state', json);
+    // Firebase 클라우드 저장
+    fbDb.ref('m5121/state').set(json).then(()=>{
+      showStatus('클라우드 저장 완료 ✓');
+    }).catch(e=>{
+      showStatus('클라우드 저장 실패 (로컬 저장됨): '+e.message);
+    });
+  }catch(e){showStatus('저장 실패: '+e.message);}
+}
+
+async function loadFromStorage(){
+  try{
+    // 1) Firebase에서 불러오기 시도
+    const snapshot = await fbDb.ref('m5121/state').once('value');
+    const fbData = snapshot.val();
+    if(fbData){
+      const data = JSON.parse(fbData);
+      _applyState(data);
+      _fixStringNumbers();
+      console.log('Firebase에서 데이터 로드 완료');
+      return;
+    }
+  }catch(e){
+    console.warn('Firebase 로드 실패, localStorage 시도:', e.message);
+  }
+  try{
+    // 2) Firebase 실패 시 localStorage 폴백
+    const local = localStorage.getItem('m5121_state');
+    if(local){
+      _applyState(JSON.parse(local));
+      _fixStringNumbers();
+      console.log('localStorage에서 데이터 로드 완료');
+      return;
+    }
+    // 3) 기존 형식 localStorage 호환 (마이그레이션)
+    const drivers = localStorage.getItem('m5121_drivers');
+    if(drivers) S.drivers = JSON.parse(drivers);
+    const base = localStorage.getItem('m5121_baseDate');
+    if(base) S.baseDate = base;
+    const order = localStorage.getItem('m5121_baseOrder');
+    if(order) S.baseOrder = JSON.parse(order);
+    const sched = localStorage.getItem('m5121_scheduleData');
+    if(sched) S.scheduleData = JSON.parse(sched);
+    const notes = localStorage.getItem('m5121_notesData');
+    if(notes) S.notesData = JSON.parse(notes);
+    const mc = localStorage.getItem('m5121_manuallyCleared');
+    if(mc) S.manuallyCleared = JSON.parse(mc);
+    _fixStringNumbers();
+    if(drivers) console.log('기존 localStorage에서 마이그레이션 완료');
+  }catch(e){console.error('loadFromStorage error:',e);}
+}
+function saveAll(){saveToStorage();}
+
+function clearMonth(){
+  showConfirm(`${S.month}월 근무표 데이터를 초기화하시겠습니까?`, ()=>{
+    const key = schedKey(S.year,S.month);
+    S.scheduleData[key] = {};
+    S.notesData[key] = {};
+    S.manuallyCleared[key] = {};
+    S.history = [];
+    updateUndoBtn();
+    saveToStorage();
+    renderMonthlySchedule();
+    renderStats();
+    showStatus('이번달 초기화됨');
+  });
+}
+
+function clearAllData(){
+  showConfirm('⚠️ 모든 데이터를 초기화하시겠습니까?<br>이 작업은 되돌릴 수 없습니다!', ()=>{
+    localStorage.clear();
+    fbDb.ref('m5121/state').remove().then(()=>location.reload()).catch(()=>location.reload());
+  });
+}
+
+function exportAllData(){
+  const data = {
+    drivers: S.drivers, baseDate: S.baseDate, baseOrder: S.baseOrder,
+    scheduleData: S.scheduleData, notesData: S.notesData,
+    exportedAt: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=`M5121_데이터_${S.year}${String(S.month).padStart(2,'0')}.json`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+function importData(){document.getElementById('importFile').click();}
+function handleImport(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev=>{
+    try{
+      const data = JSON.parse(ev.target.result);
+      if(data.drivers) S.drivers = data.drivers;
+      if(data.baseDate) S.baseDate = data.baseDate;
+      if(data.baseOrder) S.baseOrder = data.baseOrder;
+      if(data.scheduleData) S.scheduleData = data.scheduleData;
+      if(data.notesData) S.notesData = data.notesData;
+      saveToStorage();
+      refreshAll();
+      alert('데이터를 성공적으로 불러왔습니다.');
+    }catch(err){alert('파일 형식이 올바르지 않습니다: '+err.message);}
+  };
+  reader.readAsText(file);
+  e.target.value='';
+}
+
+// ═══════════════════════════════════════════════════
+//  엑셀 내보내기 (SheetJS)
+// ═══════════════════════════════════════════════════
+function exportExcel(){
+  showLoading('엑셀 파일 생성 중...');
+  setTimeout(()=>{
+    try{
+      const wb = XLSX.utils.book_new();
+      const y=S.year, m=S.month;
+      const days = daysInMonth(y,m);
+
+      // 헤더
+      const header1 = [`${y}년 ${m}월`,...Array(days+9).fill('')];
+      const header2 = ['M5121 근무표',...Array(days+9).fill('')];
+      const header3 = ['번호','차량번호','성명','휴무','조'];
+      for(let d=1;d<=days;d++) header3.push(`${d}일`);
+      header3.push('','만근수','총근무','수합','초과','특이사항','회사만근');
+      const header4 = ['','','','',' '];
+      for(let d=1;d<=days;d++) header4.push(dayName(y,m,d));
+      header4.push('','','','','','','');
+
+      const aoa = [header1, header2, header3, header4];
+
+      S.drivers.filter(dr=>dr.active).forEach(dr=>{
+        const row = [dr.id, dr.vehicle||'', dr.name, dr.dayOff, dr.preDayOff||''];
+        for(let d=1;d<=days;d++){
+          const val = getCellVal(y,m,dr.id,d);
+          const dn = dayName(y,m,d);
+          if(dn===dr.dayOff){row.push('');}
+          else if(val==='수'){row.push('수');}
+          else if(val!==null&&val!==undefined){row.push(val);}
+          else{row.push('');}
+        }
+        const stats = calcDriverStats(y,m,dr.id);
+        row.push('',''); // 병합 빈칸
+        row.push(stats.fullWork, stats.totalWork, stats.suCount,
+                 stats.over>0?'+'+stats.over:String(stats.over),
+                 dr.note||'', stats.compFW);
+        aoa.push(row);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [{wch:6},{wch:8},{wch:9},{wch:5},{wch:5},...Array(days).fill({wch:4}),...Array(7).fill({wch:7})];
+      XLSX.utils.book_append_sheet(wb, ws, `${m}월근무표`);
+
+      const fname = `M5121_${y}년_${m}월_근무표.xlsx`;
+      XLSX.writeFile(wb, fname);
+      showStatus(`${fname} 저장됨`);
+    }catch(e){alert('엑셀 내보내기 오류: '+e.message);}
+    finally{hideLoading();}
+  },100);
+}
+
+// 주배차 엑셀 내보내기
+function exportWeeklyExcel(){
+  showLoading('주배차표 엑셀 생성 중...');
+  setTimeout(()=>{
+    try{
+      const wb = XLSX.utils.book_new();
+      const y=S.year,m=S.month;
+      const weeks = getWeeksInMonth(y,m);
+
+      weeks.forEach(wk=>{
+        const aoa = [];
+        aoa.push([`${y}년 ${m}월 ${wk.week}주차 (${wk.start}일~${wk.end}일)`]);
+        aoa.push(['순번','차량','오전근무자','오전1회차','오전2회차','오후근무자','오후1회차','오후2회차','오후3회차']);
+
+        for(let d=wk.start;d<=wk.end;d++){
+          const dn = dayName(y,m,d);
+          const D = dayOffset(y,m,d);
+          aoa.push([`── ${m}/${d}(${dn}) ──`,...Array(8).fill('')]);
+
+          const mxSeq = maxSeqForDay(y,m,d);
+          const dayTimes2 = getScheduleTimes(y,m,d);
+          for(let seq=1;seq<=mxSeq;seq++){
+            const veh = vehicleAtPos(seq,D);
+            const times = dayTimes2[seq-1]||EMPTY_TIMES;
+            const assigned = S.drivers.filter(dr=>{
+              if(!dr.active) return false;
+              const v = getCellVal(y,m,dr.id,d);
+              return v===seq||v===String(seq);
+            });
+            const amD = assigned.find(dr=>getShiftForDay(y,m,dr.id,d)==='AM')||assigned[0];
+            const pmD = assigned.find(dr=>getShiftForDay(y,m,dr.id,d)==='PM')||assigned[1];
+            aoa.push([seq,veh,amD?amD.name:'',times.am1,times.am2,pmD?pmD.name:'',times.pm1,times.pm2,times.pm3||'-']);
+          }
+          aoa.push(Array(9).fill(''));
+        }
+
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws['!cols']=[{wch:5},{wch:7},{wch:9},{wch:7},{wch:7},{wch:9},{wch:7},{wch:7},{wch:7}];
+        XLSX.utils.book_append_sheet(wb, ws, `${m}월${wk.week}주`);
+      });
+
+      const fname = `M5121_${y}년_${m}월_주배차표.xlsx`;
+      XLSX.writeFile(wb, fname);
+      showStatus(`${fname} 저장됨`);
+    }catch(e){alert('오류: '+e.message);}
+    finally{hideLoading();}
+  },100);
+}
+
+// ═══════════════════════════════════════════════════
+//  이미지 내보내기 (html2canvas)
+// ═══════════════════════════════════════════════════
+async function exportCurrentDayImage(){
+  const today = new Date();
+  if(today.getFullYear()!==S.year||today.getMonth()+1!==S.month){
+    alert('현재 보고 있는 달이 오늘과 다릅니다. 오늘('+today.getDate()+'일)의 배차 이미지를 생성합니다.');
+  }
+  await exportDayImage(today.getDate());
+}
+
+async function exportDayImage(day){
+  showLoading(`${day}일 배차 이미지 생성 중...`);
+  try{
+    const y=S.year,m=S.month;
+    const D = dayOffset(y,m,day);
+    const dn = dayName(y,m,day);
+
+    // 임시 렌더 div
+    const div = document.createElement('div');
+    div.style.cssText='position:fixed;top:-9999px;left:-9999px;background:#fff;padding:16px;width:900px;';
+
+    let html = `<div style="text-align:center;margin-bottom:12px;">
+      <div style="font-size:26px;font-weight:900;color:#1a3a6b;">M5121 노선 배차표</div>
+      <div style="font-size:18px;font-weight:700;color:#333;">${y}년 ${m}월 ${day}일 (${dn})</div>
+    </div>
+    <table style="border-collapse:collapse;width:100%;font-size:14px;">
+      <tr style="background:#1a3a6b;color:#fff;">
+        <th style="border:1px solid #aaa;padding:8px;">순번</th>
+        <th style="border:1px solid #aaa;padding:8px;">차량</th>
+        <th style="border:1px solid #aaa;padding:8px;">오전 근무자</th>
+        <th style="border:1px solid #aaa;padding:8px;">오전1회차</th>
+        <th style="border:1px solid #aaa;padding:8px;">오전2회차</th>
+        <th style="border:1px solid #aaa;padding:8px;">오후 근무자</th>
+        <th style="border:1px solid #aaa;padding:8px;">오후1회차</th>
+        <th style="border:1px solid #aaa;padding:8px;">오후2회차</th>
+        <th style="border:1px solid #aaa;padding:8px;">오후3회차</th>
+      </tr>`;
+
+    const imgMaxSeq = maxSeqForDay(y,m,day);
+    const imgTimes = getScheduleTimes(y,m,day);
+    for(let seq=1;seq<=imgMaxSeq;seq++){
+      const veh = vehicleAtPos(seq,D);
+      const times = imgTimes[seq-1]||EMPTY_TIMES;
+      const assigned = S.drivers.filter(dr=>{
+        if(!dr.active) return false;
+        const v = getCellVal(y,m,dr.id,day);
+        return v===seq||v===String(seq);
+      });
+      const amD = assigned.find(dr=>getShiftForDay(y,m,dr.id,day)==='AM')||assigned[0];
+      const pmD = assigned.find(dr=>getShiftForDay(y,m,dr.id,day)==='PM')||assigned[1];
+      const bg = seq%2===0 ? '#f0f5ff':'#ffffff';
+      html += `<tr style="background:${bg};">
+        <td style="border:1px solid #ccc;padding:7px;text-align:center;font-weight:800;">${seq}</td>
+        <td style="border:1px solid #ccc;padding:7px;text-align:center;font-weight:700;">${veh}</td>
+        <td style="border:1px solid #ccc;padding:7px;text-align:center;background:#e8f4ff;">${amD?amD.name:''}</td>
+        <td style="border:1px solid #ccc;padding:7px;text-align:center;background:#e8f4ff;">${times.am1}</td>
+        <td style="border:1px solid #ccc;padding:7px;text-align:center;background:#e8f4ff;">${times.am2}</td>
+        <td style="border:1px solid #ccc;padding:7px;text-align:center;background:#fff8e8;">${pmD?pmD.name:''}</td>
+        <td style="border:1px solid #ccc;padding:7px;text-align:center;background:#fff8e8;">${times.pm1}</td>
+        <td style="border:1px solid #ccc;padding:7px;text-align:center;background:#fff8e8;">${times.pm2}</td>
+        <td style="border:1px solid #ccc;padding:7px;text-align:center;background:#fff8e8;">${times.pm3||'—'}</td>
+      </tr>`;
+    }
+    html += `</table>
+    <div style="text-align:right;font-size:11px;color:#888;margin-top:8px;">생성: ${new Date().toLocaleString('ko-KR')}</div>`;
+
+    div.innerHTML = html;
+    document.body.appendChild(div);
+
+    const canvas = await html2canvas(div, {scale:2, useCORS:true});
+    document.body.removeChild(div);
+
+    canvas.toBlob(blob=>{
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href=url; a.download=`M5121_${y}년_${m}월_${day}일_배차표.png`;
+      a.click(); URL.revokeObjectURL(url);
+      showStatus(`${day}일 배차 이미지 저장됨`);
+    });
+  }catch(e){alert('이미지 생성 오류: '+e.message);}
+  finally{hideLoading();}
+}
+
+async function exportAllImages(){
+  const y=S.year,m=S.month;
+  const days = daysInMonth(y,m);
+  showLoading('전체 이미지 ZIP 생성 중...');
+  try{
+    const zip = new JSZip();
+    const imgFolder = zip.folder(`M5121_${y}년_${m}월`);
+
+    for(let day=1;day<=days;day++){
+      const D = dayOffset(y,m,day);
+      const dn = dayName(y,m,day);
+      const div = document.createElement('div');
+      div.style.cssText='position:fixed;top:-9999px;left:-9999px;background:#fff;padding:16px;width:900px;';
+
+      let html = `<div style="text-align:center;margin-bottom:12px;">
+        <div style="font-size:24px;font-weight:900;color:#1a3a6b;">M5121 노선 배차표</div>
+        <div style="font-size:17px;font-weight:700;color:#333;">${y}년 ${m}월 ${day}일 (${dn})</div>
+      </div>
+      <table style="border-collapse:collapse;width:100%;font-size:13px;"><tr style="background:#1a3a6b;color:#fff;">
+        <th style="border:1px solid #aaa;padding:6px;">순번</th><th style="border:1px solid #aaa;padding:6px;">차량</th>
+        <th style="border:1px solid #aaa;padding:6px;">오전근무자</th><th style="border:1px solid #aaa;padding:6px;">오전1회차</th><th style="border:1px solid #aaa;padding:6px;">오전2회차</th>
+        <th style="border:1px solid #aaa;padding:6px;">오후근무자</th><th style="border:1px solid #aaa;padding:6px;">오후1회차</th><th style="border:1px solid #aaa;padding:6px;">오후2회차</th><th style="border:1px solid #aaa;padding:6px;">오후3회차</th>
+      </tr>`;
+      const zipMaxSeq = maxSeqForDay(y,m,day);
+      const zipTimes = getScheduleTimes(y,m,day);
+      for(let seq=1;seq<=zipMaxSeq;seq++){
+        const veh = vehicleAtPos(seq,D);
+        const times = zipTimes[seq-1]||EMPTY_TIMES;
+        const assigned = S.drivers.filter(dr=>{
+          if(!dr.active) return false;
+          const v = getCellVal(y,m,dr.id,day);
+          return v===seq||v===String(seq);
+        });
+        const amD = assigned.find(dr=>getShiftForDay(y,m,dr.id,day)==='AM')||assigned[0];
+        const pmD = assigned.find(dr=>getShiftForDay(y,m,dr.id,day)==='PM')||assigned[1];
+        const bg = seq%2===0?'#f0f5ff':'#fff';
+        html += `<tr style="background:${bg};"><td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:800;">${seq}</td>
+          <td style="border:1px solid #ccc;padding:6px;text-align:center;">${veh}</td>
+          <td style="border:1px solid #ccc;padding:6px;text-align:center;background:#e8f4ff;">${amD?amD.name:''}</td>
+          <td style="border:1px solid #ccc;padding:6px;text-align:center;">${times.am1}</td><td style="border:1px solid #ccc;padding:6px;text-align:center;">${times.am2}</td>
+          <td style="border:1px solid #ccc;padding:6px;text-align:center;background:#fff8e8;">${pmD?pmD.name:''}</td>
+          <td style="border:1px solid #ccc;padding:6px;text-align:center;">${times.pm1}</td><td style="border:1px solid #ccc;padding:6px;text-align:center;">${times.pm2}</td>
+          <td style="border:1px solid #ccc;padding:6px;text-align:center;">${times.pm3||'—'}</td></tr>`;
+      }
+      html += `</table>`;
+      div.innerHTML = html;
+      document.body.appendChild(div);
+      const canvas = await html2canvas(div, {scale:2,useCORS:true});
+      document.body.removeChild(div);
+      const dataUrl = canvas.toDataURL('image/png');
+      const base64 = dataUrl.split(',')[1];
+      imgFolder.file(`${String(day).padStart(2,'0')}_${day}일(${dn}).png`, base64, {base64:true});
+    }
+
+    const zipBlob = await zip.generateAsync({type:'blob'});
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement('a'); a.href=url;
+    a.download=`M5121_${y}년_${m}월_배차이미지.zip`;
+    a.click(); URL.revokeObjectURL(url);
+    showStatus(`${days}일치 이미지 ZIP 저장됨`);
+  }catch(e){alert('이미지 일괄 저장 오류: '+e.message);}
+  finally{hideLoading();}
+}
+
+async function exportWeeklyImages(){
+  const wk = getWeeksInMonth(S.year,S.month).find(w=>w.week===S.currentWeek);
+  if(!wk) return;
+  const imgs = [];
+  for(let d=wk.start;d<=wk.end;d++) imgs.push(d);
+  for(const day of imgs) await exportDayImage(day);
+}
+
+// ═══════════════════════════════════════════════════
+//  유틸리티 UI
+// ═══════════════════════════════════════════════════
+function showStatus(msg){
+  document.getElementById('saveStatus').textContent = msg;
+  setTimeout(()=>document.getElementById('saveStatus').textContent='자동 저장 완료',3000);
+}
+function showLoading(msg='처리 중...'){
+  document.getElementById('loadingText').textContent = msg;
+  document.getElementById('loadingOverlay').classList.add('show');
+}
+function hideLoading(){document.getElementById('loadingOverlay').classList.remove('show');}
+
+// ═══════════════════════════════════════════════════
+//  키보드 단축키
+// ═══════════════════════════════════════════════════
+document.addEventListener('keydown', e=>{
+  if((e.ctrlKey||e.metaKey) && e.key==='z'){e.preventDefault();undoAction();}
+  if((e.ctrlKey||e.metaKey) && e.key==='s'){e.preventDefault();saveAll();}
+  if(e.key==='Escape'){
+    document.querySelectorAll('.modal-bg.open').forEach(m=>m.classList.remove('open'));
+    _pendingCellVal=undefined;
+  }
+});
+
+// ═══════════════════════════════════════════════════
+//  초기화
+// ═══════════════════════════════════════════════════
+(async function init(){
+  // Firebase/localStorage에서 데이터 불러오기 (없으면 기본값)
+  await loadFromStorage();
+  if(!S.drivers || S.drivers.length===0){
+    S.drivers = DEFAULT_DRIVERS.map(d=>({...d}));
+  }
+  if(!S.baseOrder || S.baseOrder.length!==16){
+    S.baseOrder = [...DEFAULT_BASE_VEHICLES];
+  }
+
+  // ── 기존 데이터 마이그레이션 ──
+  S.drivers.forEach(dr=>{
+    if((!dr.vehicle||dr.vehicle==='') && dr.shift==='오전'){
+      const pairDr = S.drivers.find(p=>p.id===dr.id-1);
+      if(pairDr && pairDr.shift==='오전') dr.shift='오후';
+    }
+    if(!dr.fullDay) dr.fullDay = dr.dayOff;
+    // seq 미존재 시 id로 초기화
+    if(dr.seq == null) dr.seq = dr.id;
+    // preDayOff 미존재 시 dayOff 전날 요일로 초기화
+    if(!dr.preDayOff){
+      const idx = DAYNAMES.indexOf(dr.dayOff);
+      dr.preDayOff = DAYNAMES[(idx+6)%7];
+    }
+    // 짝수 id(pair) 운전자에게 파트너 차량 자동 설정
+    if(dr.id%2===0 && (!dr.vehicle || dr.vehicle==='')){
+      const partner = S.drivers.find(p=>p.id===dr.id-1);
+      if(partner && partner.vehicle && partner.vehicle!=='SP' && partner.vehicle!==''){
+        dr.vehicle = partner.vehicle;
+      }
+    }
+  });
+  // shiftOverrides 미존재 시 초기화
+  if(!S.shiftOverrides) S.shiftOverrides = {};
+
+  // 현재 날짜 기본값
+  const now = new Date();
+  S.year = now.getFullYear();
+  S.month = now.getMonth()+1;
+
+  document.getElementById('monthDisplay').textContent = `${S.year}년 ${S.month}월`;
+
+  // 렌더링
+  renderMonthlySchedule();
+  renderStats();
+  updateUndoBtn();
+
+  console.log('M5121 배차 관리 시스템 초기화 완료');
+})();
+</script>
+</body>
+</html>
