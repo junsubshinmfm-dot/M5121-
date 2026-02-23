@@ -4135,15 +4135,15 @@ async function exportDayImage(day){
     const isInsp = (dn==='월'||dn==='목');
     const isWeekday = !isSat(y,m,day) && !isSun(y,m,day) && !isHoliday(y,m,day);
 
-    // 빨간 시간 헬퍼 (inline style)
-    function rt(timeStr){
-      if(!timeStr || timeStr==='-') return timeStr||'';
+    // 빨간 시간: td 자체에 color 적용 (html2canvas는 span 내 color 무시할 수 있음)
+    function rtTd(timeStr, extraStyle){
+      if(!timeStr || timeStr==='-') return `<td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;${extraStyle||''}">${timeStr||''}</td>`;
       let redSet;
       if(isSun(y,m,day)||isHoliday(y,m,day)) redSet = RED_TIMES_SUN;
       else if(isSat(y,m,day)) redSet = RED_TIMES_SAT;
       else redSet = RED_TIMES_WEEKDAY;
-      if(redSet.has(timeStr)) return `<span style="color:#dc3545;font-weight:700;">${timeStr}</span>`;
-      return `<span style="font-weight:700;">${timeStr}</span>`;
+      const isRed = redSet.has(timeStr);
+      return `<td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;${isRed?'color:#dc3545;':''}${extraStyle||''}">${timeStr}</td>`;
     }
 
     const div = document.createElement('div');
@@ -4151,29 +4151,28 @@ async function exportDayImage(day){
 
     // 요일 색상
     const dayColor = (dow===0||dow===6) ? '#dc3545' : '#333';
-    const inspHtml = isInsp ? `<span style="color:#dc3545;font-weight:700;margin-left:12px;">검차하는날</span>` : '';
     const dayNames7 = ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'];
 
-    let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding:6px 8px;border-bottom:2px solid #1a3a6b;">
-      <div>
-        <span style="background:#00B0F0;color:#fff;font-weight:700;padding:4px 10px;border-radius:4px;font-size:16px;">${String(m).padStart(2,'0')}월 ${String(day).padStart(2,'0')}일</span>
-        <span style="font-weight:700;font-size:16px;margin-left:8px;color:${dayColor};">${dayNames7[dow]}</span>
-        ${inspHtml}
-      </div>
-      <div style="color:#dc3545;font-weight:700;font-size:13px;">오늘도 안전운행 무사고로 행복</div>
-    </div>
-    <table style="border-collapse:collapse;width:100%;font-size:13px;">
-      <tr>
-        <th style="border:1px solid #aaa;padding:6px;background:#f0f2f5;font-weight:700;">순번</th>
-        <th style="border:1px solid #aaa;padding:6px;background:#f0f2f5;font-weight:700;">차량</th>
-        <th style="border:1px solid #aaa;padding:6px;background:#f0f2f5;font-weight:700;">오전 근무자</th>
-        <th style="border:1px solid #aaa;padding:6px;background:#92D050;font-weight:700;color:#000;">1</th>
-        <th style="border:1px solid #aaa;padding:6px;background:#92D050;font-weight:700;color:#000;">2</th>
-        <th style="border:1px solid #aaa;padding:6px;background:#f0f2f5;font-weight:700;">오후 근무자</th>
-        <th style="border:1px solid #aaa;padding:6px;background:#00B0F0;font-weight:700;color:#000;">1</th>
-        <th style="border:1px solid #aaa;padding:6px;background:#00B0F0;font-weight:700;color:#000;">2</th>
-        <th style="border:1px solid #aaa;padding:6px;background:#00B0F0;font-weight:700;color:#000;">3</th>
-      </tr>`;
+    let html = `<table style="border-collapse:collapse;width:100%;font-size:13px;">`;
+    // ── 타이틀 행 (테이블 내) ──
+    html += `<tr>
+      <td colspan="2" style="border:1px solid #aaa;padding:7px;text-align:center;background:#00B0F0;color:#fff;font-weight:700;font-size:15px;">${String(m).padStart(2,'0')}월 ${String(day).padStart(2,'0')}일</td>
+      <td style="border:1px solid #aaa;padding:7px;text-align:center;font-weight:700;font-size:15px;color:${dayColor};">${dayNames7[dow]}</td>
+      <td colspan="2" style="border:1px solid #aaa;padding:7px;text-align:center;font-weight:700;color:#dc3545;">${isInsp?'검차하는날':''}</td>
+      <td colspan="4" style="border:1px solid #aaa;padding:7px;text-align:center;font-weight:700;color:#dc3545;font-size:12px;">오늘도 안전운행 무사고로 행복</td>
+    </tr>`;
+    // ── 컬럼 헤더 ──
+    html += `<tr>
+      <th style="border:1px solid #aaa;padding:6px;background:#f0f2f5;font-weight:700;">순번</th>
+      <th style="border:1px solid #aaa;padding:6px;background:#f0f2f5;font-weight:700;">차량</th>
+      <th style="border:1px solid #aaa;padding:6px;background:#f0f2f5;font-weight:700;">오전 근무자</th>
+      <th style="border:1px solid #aaa;padding:6px;background:#92D050;font-weight:700;">1</th>
+      <th style="border:1px solid #aaa;padding:6px;background:#92D050;font-weight:700;">2</th>
+      <th style="border:1px solid #aaa;padding:6px;background:#f0f2f5;font-weight:700;">오후 근무자</th>
+      <th style="border:1px solid #aaa;padding:6px;background:#00B0F0;font-weight:700;">1</th>
+      <th style="border:1px solid #aaa;padding:6px;background:#00B0F0;font-weight:700;">2</th>
+      <th style="border:1px solid #aaa;padding:6px;background:#00B0F0;font-weight:700;">3</th>
+    </tr>`;
 
     const imgMaxSeq = maxSeqForDay(y,m,day);
     const imgTimes = getScheduleTimes(y,m,day);
@@ -4194,25 +4193,25 @@ async function exportDayImage(day){
         <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:800;background:#FFE699;">${seq}</td>
         <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;">${veh}</td>
         <td style="border:1px solid #ccc;padding:6px;text-align:center;background:#e8f4ff;">${amD?amD.name:''}</td>
-        <td style="border:1px solid #ccc;padding:6px;text-align:center;">${rt(times.am1)}</td>
-        <td style="border:1px solid #ccc;padding:6px;text-align:center;">${rt(times.am2)}</td>
+        ${rtTd(times.am1)}
+        ${rtTd(times.am2)}
         <td style="border:1px solid #ccc;padding:6px;text-align:center;background:#fff8e8;">${pmD?pmD.name:''}</td>
-        <td style="border:1px solid #ccc;padding:6px;text-align:center;">${rt(times.pm1)}</td>
-        <td style="border:1px solid #ccc;padding:6px;text-align:center;">${rt(times.pm2)}</td>
-        <td style="border:1px solid #ccc;padding:6px;text-align:center;">${times.pm3?rt(times.pm3):'—'}</td>
+        ${rtTd(times.pm1)}
+        ${rtTd(times.pm2)}
+        ${times.pm3?rtTd(times.pm3):'<td style="border:1px solid #ccc;padding:6px;text-align:center;">—</td>'}
       </tr>`;
 
       // 수요(편도) 행 — 평일 순번 1,2 뒤에 삽입
       if(isWeekday && seq <= WED_VEHICLES.length){
         const wv = WED_VEHICLES[seq-1];
         const suDr = suDrivers[seq-1];
-        html += `<tr style="background:#FFFF00;">
-          <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;">수${seq}</td>
-          <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;">${wv.num}</td>
-          <td style="border:1px solid #ccc;padding:6px;text-align:center;">${suDr?suDr.name:''}</td>
-          <td style="border:1px solid #ccc;padding:6px;text-align:center;"><span style="color:#dc3545;font-weight:700;">${wv.am1}</span></td>
-          <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;">${wv.am2}</td>
-          <td style="border:1px solid #ccc;padding:6px;text-align:center;" colspan="4">편도(오전)</td>
+        html += `<tr>
+          <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;background:#FFFF00;">수${seq}</td>
+          <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;background:#FFFF00;">${wv.num}</td>
+          <td style="border:1px solid #ccc;padding:6px;text-align:center;background:#FFFF00;">${suDr?suDr.name:''}</td>
+          <td style="border:1px solid #ccc;padding:6px;text-align:center;color:#dc3545;font-weight:700;background:#FFFF00;">${wv.am1}</td>
+          <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;background:#FFFF00;">${wv.am2}</td>
+          <td style="border:1px solid #ccc;padding:6px;text-align:center;background:#FFFF00;" colspan="4">편도(오전)</td>
         </tr>`;
       }
     }
@@ -4251,27 +4250,27 @@ async function exportAllImages(){
       const isInsp = (dn==='월'||dn==='목');
       const isWD = !isSat(y,m,day) && !isSun(y,m,day) && !isHoliday(y,m,day);
 
-      function rt2(ts){
-        if(!ts||ts==='-') return ts||'';
+      function rtTd2(ts,ex){
+        if(!ts||ts==='-') return `<td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;${ex||''}">${ts||''}</td>`;
         let rs; if(isSun(y,m,day)||isHoliday(y,m,day)) rs=RED_TIMES_SUN; else if(isSat(y,m,day)) rs=RED_TIMES_SAT; else rs=RED_TIMES_WEEKDAY;
-        if(rs.has(ts)) return `<span style="color:#dc3545;font-weight:700;">${ts}</span>`;
-        return `<span style="font-weight:700;">${ts}</span>`;
+        const isR = rs.has(ts);
+        return `<td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;${isR?'color:#dc3545;':''}${ex||''}">${ts}</td>`;
       }
 
       const div = document.createElement('div');
       div.style.cssText='position:fixed;top:-9999px;left:-9999px;background:#fff;padding:14px;width:880px;font-family:맑은 고딕,Malgun Gothic,sans-serif;';
 
       const dayColor = (dow===0||dow===6)?'#dc3545':'#333';
-      const inspH = isInsp?`<span style="color:#dc3545;font-weight:700;margin-left:10px;">검차하는날</span>`:'';
       const dn7 = ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'];
 
-      let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;padding:4px 6px;border-bottom:2px solid #1a3a6b;">
-        <div><span style="background:#00B0F0;color:#fff;font-weight:700;padding:3px 8px;border-radius:4px;font-size:14px;">${String(m).padStart(2,'0')}월 ${String(day).padStart(2,'0')}일</span>
-        <span style="font-weight:700;font-size:14px;margin-left:6px;color:${dayColor};">${dn7[dow]}</span>${inspH}</div>
-        <div style="color:#dc3545;font-weight:700;font-size:12px;">오늘도 안전운행 무사고로 행복</div>
-      </div>
-      <table style="border-collapse:collapse;width:100%;font-size:12px;">
-      <tr>
+      let html = `<table style="border-collapse:collapse;width:100%;font-size:12px;">`;
+      html += `<tr>
+        <td colspan="2" style="border:1px solid #aaa;padding:6px;text-align:center;background:#00B0F0;color:#fff;font-weight:700;font-size:14px;">${String(m).padStart(2,'0')}월 ${String(day).padStart(2,'0')}일</td>
+        <td style="border:1px solid #aaa;padding:6px;text-align:center;font-weight:700;font-size:14px;color:${dayColor};">${dn7[dow]}</td>
+        <td colspan="2" style="border:1px solid #aaa;padding:6px;text-align:center;font-weight:700;color:#dc3545;">${isInsp?'검차하는날':''}</td>
+        <td colspan="4" style="border:1px solid #aaa;padding:6px;text-align:center;font-weight:700;color:#dc3545;font-size:11px;">오늘도 안전운행 무사고로 행복</td>
+      </tr>`;
+      html += `<tr>
         <th style="border:1px solid #aaa;padding:5px;background:#f0f2f5;font-weight:700;">순번</th>
         <th style="border:1px solid #aaa;padding:5px;background:#f0f2f5;font-weight:700;">차량</th>
         <th style="border:1px solid #aaa;padding:5px;background:#f0f2f5;font-weight:700;">오전근무자</th>
@@ -4298,24 +4297,24 @@ async function exportAllImages(){
           <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:800;background:#FFE699;">${seq}</td>
           <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;">${veh}</td>
           <td style="border:1px solid #ccc;padding:5px;text-align:center;background:#e8f4ff;">${amD?amD.name:''}</td>
-          <td style="border:1px solid #ccc;padding:5px;text-align:center;">${rt2(times.am1)}</td>
-          <td style="border:1px solid #ccc;padding:5px;text-align:center;">${rt2(times.am2)}</td>
+          ${rtTd2(times.am1)}
+          ${rtTd2(times.am2)}
           <td style="border:1px solid #ccc;padding:5px;text-align:center;background:#fff8e8;">${pmD?pmD.name:''}</td>
-          <td style="border:1px solid #ccc;padding:5px;text-align:center;">${rt2(times.pm1)}</td>
-          <td style="border:1px solid #ccc;padding:5px;text-align:center;">${rt2(times.pm2)}</td>
-          <td style="border:1px solid #ccc;padding:5px;text-align:center;">${times.pm3?rt2(times.pm3):'—'}</td>
+          ${rtTd2(times.pm1)}
+          ${rtTd2(times.pm2)}
+          ${times.pm3?rtTd2(times.pm3):'<td style="border:1px solid #ccc;padding:5px;text-align:center;">—</td>'}
         </tr>`;
 
         if(isWD && seq <= WED_VEHICLES.length){
           const wv = WED_VEHICLES[seq-1];
           const suDr = zSuDrs[seq-1];
-          html += `<tr style="background:#FFFF00;">
-            <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;">수${seq}</td>
-            <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;">${wv.num}</td>
-            <td style="border:1px solid #ccc;padding:5px;text-align:center;">${suDr?suDr.name:''}</td>
-            <td style="border:1px solid #ccc;padding:5px;text-align:center;"><span style="color:#dc3545;font-weight:700;">${wv.am1}</span></td>
-            <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;">${wv.am2}</td>
-            <td style="border:1px solid #ccc;padding:5px;text-align:center;" colspan="4">편도(오전)</td>
+          html += `<tr>
+            <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;background:#FFFF00;">수${seq}</td>
+            <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;background:#FFFF00;">${wv.num}</td>
+            <td style="border:1px solid #ccc;padding:5px;text-align:center;background:#FFFF00;">${suDr?suDr.name:''}</td>
+            <td style="border:1px solid #ccc;padding:5px;text-align:center;color:#dc3545;font-weight:700;background:#FFFF00;">${wv.am1}</td>
+            <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;background:#FFFF00;">${wv.am2}</td>
+            <td style="border:1px solid #ccc;padding:5px;text-align:center;background:#FFFF00;" colspan="4">편도(오전)</td>
           </tr>`;
         }
       }
