@@ -198,6 +198,7 @@ body{font-family:'맑은 고딕','Malgun Gothic',Arial,sans-serif;font-size:16px
     <span class="top-bar-title" id="monthlyTitle">2026년 2월 근무표</span>
     <button class="btn btn-light" id="editModeBtn" onclick="toggleEditMode()" style="font-weight:700;">🔒 수정모드</button>
     <button class="btn btn-primary" onclick="autoGenerate()">🔄 자동 배치</button>
+    <button class="btn btn-info" onclick="applyToWeekly()">📋 주간 적용</button>
 
     <button class="btn btn-success" onclick="exportExcel()">📥 엑셀 저장</button>
     <button class="btn btn-warning" onclick="document.getElementById('excelUploadInput').click()">📤 엑셀 업로드</button>
@@ -926,10 +927,13 @@ function getShiftForDay(y, m, driverId, day){
   const isFirst = dr.shift === '오전';
   const dayOffIdx = DAYNAMES.indexOf(dr.dayOff);
   if(dayOffIdx < 0) return isFirst ? 'AM' : 'PM';
-  // day 1 ~ day-1 중 휴무 요일 횟수 카운트
+  // 1월 1일부터 현재 일자 전날까지 휴무요일 횟수 누적 (월 경계 연속성 보장)
   let toggleCount = 0;
-  for(let d=1; d<day; d++){
-    if(dayOfWeek(y,m,d) === dayOffIdx) toggleCount++;
+  for(let mo = 1; mo <= m; mo++){
+    const dMax = (mo === m) ? day - 1 : daysInMonth(y, mo);
+    for(let d = 1; d <= dMax; d++){
+      if(dayOfWeek(y, mo, d) === dayOffIdx) toggleCount++;
+    }
   }
   if(isFirst){
     return (toggleCount % 2 === 0) ? 'PM' : 'AM';
@@ -1400,10 +1404,30 @@ function autoGenerate(){
         return false;
       }
 
-      // Pass 1: 주별 균등 배분 — 정순(월→토), ceil로 앞쪽 주에 금요일 포함
+      // 휴무전일 인덱스 계산
+      const preDayOffIdx = dr.preDayOff ? DAYNAMES.indexOf(dr.preDayOff) : (dayOffIdx + 6) % 7;
+
+      // 배치 헬퍼: 날짜에 순번 배정 시도
+      function tryAssignDay(d){
+        if(dayOfWeek(y,m,d) === dayOffIdx) return false;
+        if(S.scheduleData[key][dr.id][d] != null) return false;
+        if(skipForSuRest(dr.id, d)) return false;
+        if(!constraintAllows(dr.id, d)) return false;
+        const D = dayOffset(y,m,d);
+        const pos = posOfVehicle(veh, D);
+        // 주말/공휴일: 16개 포지션 전체 허용 (차량-기사 매칭 유지)
+        // 평일: 기존 maxSeq 제한 유지
+        const isWknd = isSat(y,m,d) || isSun(y,m,d) || isHoliday(y,m,d);
+        if(pos !== null && (isWknd || pos <= maxSeqForDay(y,m,d))){
+          S.scheduleData[key][dr.id][d] = pos; return true;
+        }
+        return false;
+      }
+
+      // Pass 1: 주별 균등 배분 — 비휴무전일 우선, 그 다음 휴무전일
       for(let wi=0; wi<weeks.length; wi++){
         const wk = weeks[wi];
-        if(wk.end < startDay) continue; // 보존된 주 건너뛰기
+        if(wk.end < startDay) continue;
         const wMax = weekMaxForDriver(dr.id, wk);
         const curWk = weekWorkCount(dr.id, wk);
         const cap = Math.max(0, wMax - curWk);
@@ -1412,49 +1436,51 @@ function autoGenerate(){
         const weeksLeft = weeks.length - wi;
         const target = Math.min(cap, Math.ceil(remaining / weeksLeft));
         let wkA = 0;
+        // 1a: 비휴무전일 우선 배치
         for(let d=wk.start; d<=wk.end; d++){
           if(d < startDay) continue;
           if(wkA >= target || totalAssigned >= maxWork) break;
-          if(dayOfWeek(y,m,d) === dayOffIdx) continue;
-          if(S.scheduleData[key][dr.id][d] != null) continue;
-          if(skipForSuRest(dr.id, d)) continue;
-          if(!constraintAllows(dr.id, d)) continue;
           if(weekWorkCount(dr.id, wk) >= wMax) break;
-          const D = dayOffset(y,m,d);
-          const pos = posOfVehicle(veh, D);
-          if(pos !== null && pos <= maxSeqForDay(y,m,d)){
-            S.scheduleData[key][dr.id][d] = pos; wkA++; totalAssigned++;
-          }
+          if(dayOfWeek(y,m,d) === preDayOffIdx) continue; // 휴무전일 건너뛰기
+          if(tryAssignDay(d)){ wkA++; totalAssigned++; }
+        }
+        // 1b: 남은 할당량을 휴무전일에 배치
+        for(let d=wk.start; d<=wk.end; d++){
+          if(d < startDay) continue;
+          if(wkA >= target || totalAssigned >= maxWork) break;
+          if(weekWorkCount(dr.id, wk) >= wMax) break;
+          if(tryAssignDay(d)){ wkA++; totalAssigned++; }
         }
       }
-      // Pass 2: 남은 할당량을 평일만 정순으로 채움 (Pass 1에서 못 채운 금요일 우선)
-      // 토/일은 enforceStaffing(Step 5)에서 처리 — 여기서 채우면 금요일 슬롯 부족
+      // Pass 2: 남은 할당량을 평일만 정순으로 채움 — 비휴무전일 우선
       for(let wi=0; wi<weeks.length && totalAssigned < maxWork; wi++){
         const wk = weeks[wi];
         if(wk.end < startDay) continue;
         const wMax = weekMaxForDriver(dr.id, wk);
+        // 2a: 비휴무전일 평일 우선
         for(let d=wk.start; d<=wk.end && totalAssigned < maxWork; d++){
           if(d < startDay) continue;
           if(isSat(y,m,d) || isSun(y,m,d) || isHoliday(y,m,d)) continue;
-          if(dayOfWeek(y,m,d) === dayOffIdx) continue;
-          if(S.scheduleData[key][dr.id][d] != null) continue;
-          if(skipForSuRest(dr.id, d)) continue;
-          if(!constraintAllows(dr.id, d)) continue;
+          if(dayOfWeek(y,m,d) === preDayOffIdx) continue; // 휴무전일 건너뛰기
           if(weekWorkCount(dr.id, wk) >= wMax) break;
-          const D = dayOffset(y,m,d);
-          const pos = posOfVehicle(veh, D);
-          if(pos !== null && pos <= maxSeqForDay(y,m,d)){
-            S.scheduleData[key][dr.id][d] = pos; totalAssigned++;
-          }
+          if(tryAssignDay(d)){ totalAssigned++; }
+        }
+        // 2b: 휴무전일 평일 배치
+        for(let d=wk.start; d<=wk.end && totalAssigned < maxWork; d++){
+          if(d < startDay) continue;
+          if(isSat(y,m,d) || isSun(y,m,d) || isHoliday(y,m,d)) continue;
+          if(weekWorkCount(dr.id, wk) >= wMax) break;
+          if(tryAssignDay(d)){ totalAssigned++; }
         }
       }
     });
 
     // ── 1-c단계: 차량 순번 초과 시 빈 순번에 배치 (주말/공휴일 대응) ──
-    // 주별 균등 분배 적용
+    // 주별 균등 분배 적용 + 휴무전일 후순위
     allFixedDrs.forEach(dr=>{
       const compFW = calcFullWork(y,m,dr.dayOff,dr.preDayOff);
-      const dayOffIdx = DAYNAMES.indexOf(dr.dayOff);
+      const dayOffIdx1c = DAYNAMES.indexOf(dr.dayOff);
+      const preDayOffIdx1c = dr.preDayOff ? DAYNAMES.indexOf(dr.preDayOff) : (dayOffIdx1c + 6) % 7;
       let tw = totalWork(dr.id);
       if(tw >= compFW) return;
       const target1c = compFW - tw;
@@ -1464,12 +1490,34 @@ function autoGenerate(){
       function skipForSuRest1c(driverId, d){
         if(d < days){
           const nextDow = dayOfWeek(y,m,d+1);
-          if(nextDow === dayOffIdx && S.scheduleData[key][driverId][d+1] === '수') return true;
+          if(nextDow === dayOffIdx1c && S.scheduleData[key][driverId][d+1] === '수') return true;
+        }
+        return false;
+      }
+      // 헬퍼: 빈 순번 찾아 배치 (주말/공휴일 제외 — Step 1에서 정위치 배정됨)
+      function tryAssign1c(d){
+        if(isSat(y,m,d) || isSun(y,m,d) || isHoliday(y,m,d)) return false;
+        if(dayOfWeek(y,m,d) === dayOffIdx1c) return false;
+        if(S.scheduleData[key][dr.id][d] != null) return false;
+        if(skipForSuRest1c(dr.id, d)) return false;
+        if(!constraintAllows(dr.id, d)) return false;
+        const maxSeq = maxSeqForDay(y,m,d);
+        const myShift = getShiftForDay(y,m,dr.id,d);
+        const taken = new Set();
+        S.drivers.filter(dd=>dd.active).forEach(dd=>{
+          if(getShiftForDay(y,m,dd.id,d) !== myShift) return;
+          const v = S.scheduleData[key][dd.id]?.[d];
+          if(typeof v==='number') taken.add(v);
+        });
+        for(let seq=1;seq<=maxSeq;seq++){
+          if(!taken.has(seq)){
+            S.scheduleData[key][dr.id][d] = seq; return true;
+          }
         }
         return false;
       }
 
-      // Pass 1: 주별 균등 — 정순(월→토), ceil로 앞쪽 주에 금요일 포함
+      // Pass 1: 주별 균등 — 비휴무전일 우선
       for(let wi=0; wi<weeks.length; wi++){
         const wk = weeks[wi];
         if(wk.end < startDay) continue;
@@ -1481,55 +1529,41 @@ function autoGenerate(){
         const wLeft = weeks.length - wi;
         const wTarget = Math.min(cap, Math.ceil(rem / wLeft));
         let wkA = 0;
+        // 1a: 비휴무전일 우선
         for(let d=wk.start; d<=wk.end; d++){
           if(d < startDay) continue;
           if(wkA >= wTarget || assigned1c >= target1c) break;
-          if(dayOfWeek(y,m,d) === dayOffIdx) continue;
-          if(S.scheduleData[key][dr.id][d] != null) continue;
-          if(skipForSuRest1c(dr.id, d)) continue;
-          if(!constraintAllows(dr.id, d)) continue;
           if(weekWorkCount(dr.id, wk) >= wMax) break;
-          const maxSeq = maxSeqForDay(y,m,d);
-          const myShift = getShiftForDay(y,m,dr.id,d);
-          const taken = new Set();
-          S.drivers.filter(dd=>dd.active).forEach(dd=>{
-            if(getShiftForDay(y,m,dd.id,d) !== myShift) return;
-            const v = S.scheduleData[key][dd.id]?.[d];
-            if(typeof v==='number') taken.add(v);
-          });
-          for(let seq=1;seq<=maxSeq;seq++){
-            if(!taken.has(seq)){
-              S.scheduleData[key][dr.id][d] = seq; wkA++; assigned1c++; break;
-            }
-          }
+          if(dayOfWeek(y,m,d) === preDayOffIdx1c) continue; // 휴무전일 건너뛰기
+          if(tryAssign1c(d)){ wkA++; assigned1c++; }
+        }
+        // 1b: 휴무전일 배치
+        for(let d=wk.start; d<=wk.end; d++){
+          if(d < startDay) continue;
+          if(wkA >= wTarget || assigned1c >= target1c) break;
+          if(weekWorkCount(dr.id, wk) >= wMax) break;
+          if(tryAssign1c(d)){ wkA++; assigned1c++; }
         }
       }
-      // Pass 2: 남은 할당량을 평일만 정순으로 채움 (금요일 우선 확보)
+      // Pass 2: 남은 할당량을 평일만 — 비휴무전일 우선
       for(let wi=0; wi<weeks.length && assigned1c < target1c; wi++){
         const wk = weeks[wi];
         if(wk.end < startDay) continue;
         const wMax = weekMaxForDriver(dr.id, wk);
+        // 2a: 비휴무전일 평일
         for(let d=wk.start; d<=wk.end && assigned1c < target1c; d++){
           if(d < startDay) continue;
           if(isSat(y,m,d) || isSun(y,m,d) || isHoliday(y,m,d)) continue;
-          if(dayOfWeek(y,m,d) === dayOffIdx) continue;
-          if(S.scheduleData[key][dr.id][d] != null) continue;
-          if(skipForSuRest1c(dr.id, d)) continue;
-          if(!constraintAllows(dr.id, d)) continue;
+          if(dayOfWeek(y,m,d) === preDayOffIdx1c) continue;
           if(weekWorkCount(dr.id, wk) >= wMax) break;
-          const maxSeq = maxSeqForDay(y,m,d);
-          const myShift = getShiftForDay(y,m,dr.id,d);
-          const taken = new Set();
-          S.drivers.filter(dd=>dd.active).forEach(dd=>{
-            if(getShiftForDay(y,m,dd.id,d) !== myShift) return;
-            const v = S.scheduleData[key][dd.id]?.[d];
-            if(typeof v==='number') taken.add(v);
-          });
-          for(let seq=1;seq<=maxSeq;seq++){
-            if(!taken.has(seq)){
-              S.scheduleData[key][dr.id][d] = seq; assigned1c++; break;
-            }
-          }
+          if(tryAssign1c(d)){ assigned1c++; }
+        }
+        // 2b: 휴무전일 평일
+        for(let d=wk.start; d<=wk.end && assigned1c < target1c; d++){
+          if(d < startDay) continue;
+          if(isSat(y,m,d) || isSun(y,m,d) || isHoliday(y,m,d)) continue;
+          if(weekWorkCount(dr.id, wk) >= wMax) break;
+          if(tryAssign1c(d)){ assigned1c++; }
         }
       }
     });
@@ -1539,7 +1573,10 @@ function autoGenerate(){
       if(d<startDay) continue;
       const dn = dayName(y,m,d);
       const D = dayOffset(y,m,d);
-      const maxSeq = maxSeqForDay(y,m,d);
+      const isWknd2 = isSat(y,m,d) || isSun(y,m,d) || isHoliday(y,m,d);
+      // 주말: 16개 포지션 전체 스캔, 평일: maxSeq 사용
+      const scanMax2 = isWknd2 ? 16 : maxSeqForDay(y,m,d);
+      const targetMax2 = maxSeqForDay(y,m,d); // 목표 배정 수
       const wkSP = weeks.find(w=>d>=w.start&&d<=w.end);
 
       for(const shift of ['AM','PM']){
@@ -1550,12 +1587,16 @@ function autoGenerate(){
           const v = S.scheduleData[key][dr.id]?.[d];
           if(v!==null && v!==undefined && typeof v==='number') takenSeqs.add(v);
         });
+        // 주말: 이미 target 이상 배정되면 SP 추가 불필요
+        if(isWknd2 && takenSeqs.size >= targetMax2) continue;
         // 빈 순번 찾기
         const openSeqs = [];
-        for(let seq=1;seq<=maxSeq;seq++){
+        for(let seq=1;seq<=scanMax2;seq++){
           if(!takenSeqs.has(seq)) openSeqs.push(seq);
         }
         if(openSeqs.length===0) continue;
+        // 주말: SP가 채울 수 있는 최대 수 = target - 현재 배정 수
+        const spLimit2 = isWknd2 ? Math.max(0, targetMax2 - takenSeqs.size) : openSeqs.length;
         // 이 시간대의 가용 SP (해당일에 이 shift인 SP만, 휴무전날 포함하되 순위 뒤)
         const availSP = allSPDrs.filter(sp=>{
           if(getShiftForDay(y,m,sp.id,d) !== shift) return false;
@@ -1576,11 +1617,12 @@ function autoGenerate(){
           return (totalWork(a.id)-calcFullWork(y,m,a.dayOff,a.preDayOff)) - (totalWork(b.id)-calcFullWork(y,m,b.dayOff,b.preDayOff));
         });
         let spIdx = 0;
-        openSeqs.forEach(seq=>{
-          if(spIdx >= availSP.length) return;
-          S.scheduleData[key][availSP[spIdx].id][d] = seq;
+        const maxSPFill = Math.min(spLimit2, openSeqs.length);
+        for(let oi=0; oi<maxSPFill; oi++){
+          if(spIdx >= availSP.length) break;
+          S.scheduleData[key][availSP[spIdx].id][d] = openSeqs[oi];
           spIdx++;
-        });
+        }
       }
     }
 
@@ -1601,7 +1643,9 @@ function autoGenerate(){
     // ── 3-b단계: Step 3에서 빈 자리 SP 백필 ──
     for(let d=1;d<=days;d++){
       if(d<startDay) continue;
-      const maxSeq3b = maxSeqForDay(y,m,d);
+      const isWknd3b = isSat(y,m,d) || isSun(y,m,d) || isHoliday(y,m,d);
+      const scanMax3b = isWknd3b ? 16 : maxSeqForDay(y,m,d);
+      const targetMax3b = maxSeqForDay(y,m,d);
       const dn3b = dayName(y,m,d);
       const wk3b = weeks.find(w=>d>=w.start&&d<=w.end);
       for(const shift of ['AM','PM']){
@@ -1609,9 +1653,11 @@ function autoGenerate(){
         S.drivers.filter(dr=>dr.active).forEach(dr=>{
           if(getShiftForDay(y,m,dr.id,d) !== shift) return;
           const v = S.scheduleData[key][dr.id]?.[d];
-          if(typeof v==='number' && v>=1 && v<=maxSeq3b) takenSeqs3b.add(v);
+          if(typeof v==='number' && v>=1 && v<=scanMax3b) takenSeqs3b.add(v);
         });
-        for(let seq=1;seq<=maxSeq3b;seq++){
+        // 주말: 이미 target 이상 배정되면 추가 불필요
+        if(isWknd3b && takenSeqs3b.size >= targetMax3b) continue;
+        for(let seq=1;seq<=scanMax3b;seq++){
           if(takenSeqs3b.has(seq)) continue;
           // 빈 순번에 SP 배치 시도
           const cand3b = allSPDrs.filter(sp=>{
@@ -1677,28 +1723,44 @@ function autoGenerate(){
       const wkE = weeks.find(w=>d>=w.start&&d<=w.end);
       const allActive = S.drivers.filter(dr=>dr.active);
       const shiftDrs = allActive.filter(dr=>getShiftForDay(y,m,dr.id,d)===shift);
+      const isWkndE = isSat(y,m,d) || isSun(y,m,d) || isHoliday(y,m,d);
+      // 주말: 16개 포지션 전체에서 관리, 목표 배정수는 maxSeq(10/8)
+      const scanMaxE = isWkndE ? 16 : maxSeq;
 
       // (A) 유효한 순번만 남기고 범위밖/중복 제거
       const validPos = {};
-      const excessDrs = []; // 유효 범위 내이지만 중복인 운전자
       shiftDrs.forEach(dr=>{
         const v = S.scheduleData[key][dr.id]?.[d];
         const vn = typeof v==='string' ? parseInt(v) : v;
-        if(typeof vn==='number' && !isNaN(vn) && vn>=1 && vn<=maxSeq){
+        if(typeof vn==='number' && !isNaN(vn) && vn>=1 && vn<=scanMaxE){
           if(!validPos[vn]){
             validPos[vn] = dr.id;
           } else {
-            // 중복: 초과 운전자 → 해제
             S.scheduleData[key][dr.id][d] = null;
-            excessDrs.push(dr.id);
           }
         } else if(v!==null && v!==undefined && v!=='수' && v!=='휴'){
-          // 범위 밖(>maxSeq) 또는 유효하지 않은 값 → 제거
           S.scheduleData[key][dr.id][d] = null;
         }
       });
 
-      // (B) 빈 순번 채우기 — 3-pass (정원 16/10/8 최우선 보장)
+      // 주말: 배정수가 목표(maxSeq) 초과 시 초과분 제거 (over 큰 순)
+      if(isWkndE){
+        const filledCount = Object.keys(validPos).length;
+        if(filledCount > maxSeq){
+          const entries = Object.entries(validPos).map(([pos,dId])=>({pos:parseInt(pos),driverId:dId}));
+          entries.sort((a,b)=>{
+            const aOver = calcDriverStats(y,m,a.driverId).over;
+            const bOver = calcDriverStats(y,m,b.driverId).over;
+            return bOver - aOver; // over 많은 사람 먼저 제거
+          });
+          for(let i=0; i<filledCount-maxSeq; i++){
+            S.scheduleData[key][entries[i].driverId][d] = null;
+            delete validPos[entries[i].pos];
+          }
+        }
+      }
+
+      // (B) 빈 자리 채우기
       function sortCand(a,b){
         const aPdo = a.preDayOff||DAYNAMES[(DAYNAMES.indexOf(a.dayOff)+6)%7];
         const bPdo = b.preDayOff||DAYNAMES[(DAYNAMES.indexOf(b.dayOff)+6)%7];
@@ -1714,15 +1776,13 @@ function autoGenerate(){
         const ex = S.scheduleData[key][dr.id]?.[d];
         if(ex!==null&&ex!==undefined) return false;
         if(!allowDayOff && dn===dr.dayOff) return false;
-        if(isSuRestConflict(dr.id, d)) return false; // preDayOff+수 연속근무 방지 (모든 pass 적용)
+        if(isSuRestConflict(dr.id, d)) return false;
         if(!relaxWeekMax && wkE && weekWorkCount(dr.id,wkE)>=weekMaxForDriver(dr.id,wkE)) return false;
-        if(relaxWeekMax && wkE && weekWorkCount(dr.id,wkE)>=6) return false; // 주 6일 절대상한
+        if(relaxWeekMax && wkE && weekWorkCount(dr.id,wkE)>=6) return false;
         const tw = totalWork(dr.id);
         const fw = calcFullWork(y,m,dr.dayOff,dr.preDayOff);
         if(tw>=fw+2) return false;
-        // 만근 제약: 초과 0 강제
         if(hasConstraint(dr.id,'만근') && tw>=fw) return false;
-        // 시간대별 제약조건
         if(!constraintAllows(dr.id, d)) return false;
         return true;
       }
@@ -1733,23 +1793,51 @@ function autoGenerate(){
         }
         return sortCand(a,b);
       }
-      for(let seq=1;seq<=maxSeq;seq++){
-        if(validPos[seq]) continue;
-        // 1차: dayOff 제외 + weekMax 준수 + fw+2
-        let cand = shiftDrs.filter(dr=>candFilter(dr,false,false)).sort((a,b)=>candSort(a,b,false));
-        // 2차: dayOff 허용 + weekMax 준수 + fw+2
-        if(cand.length===0) cand = shiftDrs.filter(dr=>candFilter(dr,true,false)).sort((a,b)=>candSort(a,b,true));
-        // 3차: dayOff 허용 + weekMax 완화(주6일상한) — 위반 적은 사람 우선
-        if(cand.length===0){
-          cand = shiftDrs.filter(dr=>candFilter(dr,true,true)).sort((a,b)=>{
-            const aV = weekMaxViolations(a.id), bV = weekMaxViolations(b.id);
-            if(aV!==bV) return aV-bV; // 위반 적은 사람 우선
-            return candSort(a,b,true);
-          });
+
+      if(isWkndE){
+        // 주말: 목표 배정수까지 빈 포지션에 채우기
+        const currentFilled = Object.keys(validPos).length;
+        let toFill = maxSeq - currentFilled;
+        if(toFill <= 0) return;
+        // 16개 포지션 중 빈 것 수집
+        const emptySeqs = [];
+        for(let seq=1;seq<=16;seq++){
+          if(!validPos[seq]) emptySeqs.push(seq);
         }
-        if(cand.length>0){
-          S.scheduleData[key][cand[0].id][d] = seq;
-          validPos[seq] = cand[0].id;
+        for(const seq of emptySeqs){
+          if(toFill <= 0) break;
+          let cand = shiftDrs.filter(dr=>candFilter(dr,false,false)).sort((a,b)=>candSort(a,b,false));
+          if(cand.length===0) cand = shiftDrs.filter(dr=>candFilter(dr,false,true)).sort((a,b)=>candSort(a,b,false));
+          if(cand.length===0) cand = shiftDrs.filter(dr=>candFilter(dr,true,true)).sort((a,b)=>candSort(a,b,true));
+          if(cand.length>0){
+            S.scheduleData[key][cand[0].id][d] = seq;
+            validPos[seq] = cand[0].id;
+            toFill--;
+          }
+        }
+      } else {
+        // 평일: 기존 로직 — 순번 1~maxSeq 빈 자리 채우기
+        for(let seq=1;seq<=maxSeq;seq++){
+          if(validPos[seq]) continue;
+          let cand = shiftDrs.filter(dr=>candFilter(dr,false,false)).sort((a,b)=>candSort(a,b,false));
+          if(cand.length===0){
+            cand = shiftDrs.filter(dr=>candFilter(dr,false,true)).sort((a,b)=>{
+              const aV = weekMaxViolations(a.id), bV = weekMaxViolations(b.id);
+              if(aV!==bV) return aV-bV;
+              return candSort(a,b,false);
+            });
+          }
+          if(cand.length===0){
+            cand = shiftDrs.filter(dr=>candFilter(dr,true,true)).sort((a,b)=>{
+              const aV = weekMaxViolations(a.id), bV = weekMaxViolations(b.id);
+              if(aV!==bV) return aV-bV;
+              return candSort(a,b,true);
+            });
+          }
+          if(cand.length>0){
+            S.scheduleData[key][cand[0].id][d] = seq;
+            validPos[seq] = cand[0].id;
+          }
         }
       }
     }
@@ -1883,7 +1971,8 @@ function autoGenerate(){
     for(let d=startDay;d<=days;d++){
       const dn10 = dayName(y,m,d);
       const wk10 = weeks.find(w=>d>=w.start&&d<=w.end);
-      const maxSeq10 = maxSeqForDay(y,m,d);
+      const isWknd10 = isSat(y,m,d) || isSun(y,m,d) || isHoliday(y,m,d);
+      const maxSeq10 = isWknd10 ? maxSeqForDay(y,m,d) : maxSeqForDay(y,m,d);
       for(const shift of ['AM','PM']){
         const shiftDrs10 = S.drivers.filter(dr=>dr.active && !dr.isSupport && getShiftForDay(y,m,dr.id,d)===shift);
 
@@ -1938,6 +2027,8 @@ function autoGenerate(){
     saveToStorage();
     renderMonthlySchedule();
     renderStats();
+    renderWeekTabs();
+    renderWeeklyDispatch();
     showStatus(startDay>1 ? `자동 배치 완료! (${startDay}일부터)` : '자동 배치 완료!');
   });
 }
@@ -2903,43 +2994,79 @@ function renderWeeklyDispatch(){
     const maxSeq = maxSeqForDay(y,m,d);
     const dayTimes = getScheduleTimes(y,m,d);
     const isSuDay = !isSat(y,m,d) && !isSun(y,m,d) && !isHoliday(y,m,d);
+    const isWkndDay = !isSuDay;
     const suDrivers = isSuDay ? S.drivers.filter(dr=>{ if(!dr.active) return false; return getCellVal(y,m,dr.id,d)==='수'; }) : [];
-    for(let seq=1;seq<=maxSeq;seq++){
-      const veh = vehicleAtPos(seq,D);
-      const times = dayTimes[seq-1]||EMPTY_TIMES;
-      // 해당 순번 배정된 운전자 찾기
-      const assignedDrivers = S.drivers.filter(dr=>{
-        if(!dr.active) return false;
-        const v = getCellVal(y,m,dr.id,d);
-        return v===seq || v===String(seq);
-      });
-      const amDriver = assignedDrivers.find(dr=>getShiftForDay(y,m,dr.id,d)==='AM');
-      const pmDriver = assignedDrivers.find(dr=>getShiftForDay(y,m,dr.id,d)==='PM');
+    const editable = _editMode ? 'true' : 'false';
 
-      const editable = _editMode ? 'true' : 'false';
-      html += `<tr>
-        <td class="dam-row"><b>${seq}</b></td>
-        <td class="dam-row">${veh}</td>
-        <td class="dam-row" contenteditable="${editable}" style="cursor:text;outline:none;min-width:60px;">${amDriver?amDriver.name:''}</td>
-        <td class="dam-row">${_redTime(times.am1,y,m,d)}</td>
-        <td class="dam-row">${_redTime(times.am2,y,m,d)}</td>
-        <td class="dpm-row" contenteditable="${editable}" style="cursor:text;outline:none;min-width:60px;">${pmDriver?pmDriver.name:''}</td>
-        <td class="dpm-row">${_redTime(times.pm1,y,m,d)}</td>
-        <td class="dpm-row">${_redTime(times.pm2,y,m,d)}</td>
-        <td class="dpm-row">${times.pm3?_redTime(times.pm3,y,m,d):'-'}</td>
-      </tr>`;
-
-      // 평일: 순번1 뒤 → 편도 첫번째, 순번2 뒤 → 편도 두번째
-      if(isSuDay && seq <= WED_VEHICLES.length){
-        const wi = seq - 1;
-        const wv = WED_VEHICLES[wi];
-        const assignedName = suDrivers[wi] ? suDrivers[wi].name : '미배정';
+    if(isWkndDay){
+      // 주말/공휴일: 16개 포지션 전체 스캔 → 배정된 것만 수집 → 재번호
+      const filledPositions = [];
+      for(let seq=1;seq<=16;seq++){
+        const veh = vehicleAtPos(seq,D);
+        const assignedDrivers = S.drivers.filter(dr=>{
+          if(!dr.active) return false;
+          const v = getCellVal(y,m,dr.id,d);
+          return v===seq || v===String(seq);
+        });
+        if(assignedDrivers.length > 0){
+          filledPositions.push({seq, veh, assignedDrivers});
+        }
+      }
+      // displayMax개만 표시, 1번부터 재번호
+      const displayList = filledPositions.slice(0, maxSeq);
+      displayList.forEach((fp, idx) => {
+        const amDriver = fp.assignedDrivers.find(dr=>getShiftForDay(y,m,dr.id,d)==='AM');
+        const pmDriver = fp.assignedDrivers.find(dr=>getShiftForDay(y,m,dr.id,d)==='PM');
+        const times = dayTimes[idx]||EMPTY_TIMES;
         html += `<tr>
-          <td class="dw-row">수${seq}</td><td class="dw-row">${wv.num}</td>
-          <td class="dw-row" contenteditable="${editable}" style="cursor:text;outline:none;">${assignedName}</td>
-          <td class="dw-row">${_redTime(wv.am1,y,m,d)}</td><td class="dw-row">${_redTime(wv.am2,y,m,d)}</td>
-          <td class="dw-row" colspan="4">편도(오전)</td>
+          <td class="dam-row"><b>${idx+1}</b></td>
+          <td class="dam-row">${fp.veh}</td>
+          <td class="dam-row" contenteditable="${editable}" style="cursor:text;outline:none;min-width:60px;">${amDriver?amDriver.name:''}</td>
+          <td class="dam-row">${_redTime(times.am1,y,m,d)}</td>
+          <td class="dam-row">${_redTime(times.am2,y,m,d)}</td>
+          <td class="dpm-row" contenteditable="${editable}" style="cursor:text;outline:none;min-width:60px;">${pmDriver?pmDriver.name:''}</td>
+          <td class="dpm-row">${_redTime(times.pm1,y,m,d)}</td>
+          <td class="dpm-row">${_redTime(times.pm2,y,m,d)}</td>
+          <td class="dpm-row">${times.pm3?_redTime(times.pm3,y,m,d):'-'}</td>
         </tr>`;
+      });
+    } else {
+      // 평일: 기존 로직 — 순번 1~maxSeq
+      for(let seq=1;seq<=maxSeq;seq++){
+        const veh = vehicleAtPos(seq,D);
+        const times = dayTimes[seq-1]||EMPTY_TIMES;
+        const assignedDrivers = S.drivers.filter(dr=>{
+          if(!dr.active) return false;
+          const v = getCellVal(y,m,dr.id,d);
+          return v===seq || v===String(seq);
+        });
+        const amDriver = assignedDrivers.find(dr=>getShiftForDay(y,m,dr.id,d)==='AM');
+        const pmDriver = assignedDrivers.find(dr=>getShiftForDay(y,m,dr.id,d)==='PM');
+
+        html += `<tr>
+          <td class="dam-row"><b>${seq}</b></td>
+          <td class="dam-row">${veh}</td>
+          <td class="dam-row" contenteditable="${editable}" style="cursor:text;outline:none;min-width:60px;">${amDriver?amDriver.name:''}</td>
+          <td class="dam-row">${_redTime(times.am1,y,m,d)}</td>
+          <td class="dam-row">${_redTime(times.am2,y,m,d)}</td>
+          <td class="dpm-row" contenteditable="${editable}" style="cursor:text;outline:none;min-width:60px;">${pmDriver?pmDriver.name:''}</td>
+          <td class="dpm-row">${_redTime(times.pm1,y,m,d)}</td>
+          <td class="dpm-row">${_redTime(times.pm2,y,m,d)}</td>
+          <td class="dpm-row">${times.pm3?_redTime(times.pm3,y,m,d):'-'}</td>
+        </tr>`;
+
+        // 평일: 순번1 뒤 → 편도 첫번째, 순번2 뒤 → 편도 두번째
+        if(seq <= WED_VEHICLES.length){
+          const wi = seq - 1;
+          const wv = WED_VEHICLES[wi];
+          const assignedName = suDrivers[wi] ? suDrivers[wi].name : '미배정';
+          html += `<tr>
+            <td class="dw-row">수${seq}</td><td class="dw-row">${wv.num}</td>
+            <td class="dw-row" contenteditable="${editable}" style="cursor:text;outline:none;">${assignedName}</td>
+            <td class="dw-row">${_redTime(wv.am1,y,m,d)}</td><td class="dw-row">${_redTime(wv.am2,y,m,d)}</td>
+            <td class="dw-row" colspan="4">편도(오전)</td>
+          </tr>`;
+        }
       }
     }
 
@@ -3335,6 +3462,13 @@ function switchTab(tab){
   else if(tab==='employees'){renderEmployeeTable();}
   else if(tab==='vehicles'){renderVehicleTable();}
   else if(tab==='settings'){renderRotationGrid();renderVersionList();}
+}
+
+function applyToWeekly(){
+  _fixStringNumbers();
+  renderWeekTabs();
+  renderWeeklyDispatch();
+  showStatus('주간 배차표에 적용 완료 ✓');
 }
 
 function refreshAll(){
@@ -4223,59 +4357,78 @@ function exportWeeklyExcel(){
           const dayTimes = getScheduleTimes(y,m,d);
           const isSuDay = isWeekday; // 평일만 수요 표시
           const suDrivers = isSuDay ? S.drivers.filter(dr=>{ if(!dr.active) return false; return getCellVal(y,m,dr.id,d)==='수'; }) : [];
+          const isWkndPanel = !isWeekday;
 
           let dataRow = r1 + 1;
-          for(let seq=1;seq<=mxSeq;seq++){
-            const r = dataRow;
-            const veh = vehicleAtPos(seq,D);
-            const times = dayTimes[seq-1]||EMPTY_TIMES;
 
-            const assigned = S.drivers.filter(dr=>{
-              if(!dr.active) return false;
-              const v = getCellVal(y,m,dr.id,d);
-              return v===seq||v===String(seq);
-            });
-            const amD = assigned.find(dr=>getShiftForDay(y,m,dr.id,d)==='AM');
-            const pmD = assigned.find(dr=>getShiftForDay(y,m,dr.id,d)==='PM');
-
-            // 순번
-            setCell(ws,r,panel.seq,seq,{font:fontB,alignment:ctr,fill:{fgColor:{rgb:GOLD}},border:thinBorder});
-            // 차량
+          function writeDataRow(r, displaySeq, veh, times, amD, pmD){
+            setCell(ws,r,panel.seq,displaySeq,{font:fontB,alignment:ctr,fill:{fgColor:{rgb:GOLD}},border:thinBorder});
             setCell(ws,r,panel.veh,veh,{font:fontB,alignment:ctr,border:thinBorder,fill:{fgColor:{rgb:WHITE}}});
-            // 오전 근무자
             setCell(ws,r,panel.amName,amD?amD.name:'',{font:fontN,alignment:ctr,fill:{fgColor:{rgb:WHITE}},border:thinBorder});
-            // 오전 시간
             setCell(ws,r,panel.am1,times.am1||'',{font:fontB,alignment:ctr,fill:{fgColor:{rgb:WHITE}},border:thinBorder});
             setCell(ws,r,panel.am2,times.am2||'',{font:fontB,alignment:ctrWrap,fill:{fgColor:{rgb:WHITE}},border:thinBorder});
-            // 오후 근무자
             setCell(ws,r,panel.pmName,pmD?pmD.name:'',{font:fontN,alignment:ctr,fill:{fgColor:{rgb:WHITE}},border:thinBorder});
-            // 오후 시간
             setCell(ws,r,panel.pm1,times.pm1||'',{font:fontB,alignment:ctr,fill:{fgColor:{rgb:WHITE}},border:thinBorder});
             setCell(ws,r,panel.pm2,times.pm2||'',{font:fontB,alignment:ctrWrap,fill:{fgColor:{rgb:WHITE}},border:thinBorder});
             setCell(ws,r,panel.pm3,times.pm3||'',{font:fontB,alignment:ctrWrap,fill:{fgColor:{rgb:WHITE}},border:thinBorder});
+          }
 
-            dataRow++;
-
-            // 수요 행 (평일 순번 1,2 뒤)
-            if(isSuDay && seq <= WED_VEHICLES.length){
-              const wv = WED_VEHICLES[seq-1];
-              const suDr = suDrivers[seq-1];
-              const sr = dataRow;
-
-              const ySt = {font:fontB,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder};
-              const yStN = {font:fontN,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder};
-              setCell(ws,sr,panel.seq,'수요',ySt);
-              setCell(ws,sr,panel.veh,wv.num,ySt);
-              setCell(ws,sr,panel.amName,suDr?suDr.name:'',yStN);
-              setCell(ws,sr,panel.am1,wv.am1,{font:fontRedTime,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder});
-              setCell(ws,sr,panel.am2,wv.am2,{font:fontB,alignment:ctrWrap,fill:{fgColor:{rgb:YELLOW}},border:thinBorder});
-              // 오후 쪽 빈칸 (편도이므로)
-              setCell(ws,sr,panel.pmName,'',{font:fontN,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder});
-              setCell(ws,sr,panel.pm1,'',{font:fontB,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder});
-              setCell(ws,sr,panel.pm2,'',{font:fontB,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder});
-              setCell(ws,sr,panel.pm3,'',{font:fontB,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder});
-
+          if(isWkndPanel){
+            // 주말/공휴일: 16개 포지션 전체 스캔 → 배정된 것만 수집 → 재번호
+            const filledPositions = [];
+            for(let seq=1;seq<=16;seq++){
+              const veh = vehicleAtPos(seq,D);
+              const assigned = S.drivers.filter(dr=>{
+                if(!dr.active) return false;
+                const v = getCellVal(y,m,dr.id,d);
+                return v===seq||v===String(seq);
+              });
+              if(assigned.length > 0){
+                filledPositions.push({seq, veh, assigned});
+              }
+            }
+            const displayList = filledPositions.slice(0, mxSeq);
+            displayList.forEach((fp, idx) => {
+              const amD = fp.assigned.find(dr=>getShiftForDay(y,m,dr.id,d)==='AM');
+              const pmD = fp.assigned.find(dr=>getShiftForDay(y,m,dr.id,d)==='PM');
+              const times = dayTimes[idx]||EMPTY_TIMES;
+              writeDataRow(dataRow, idx+1, fp.veh, times, amD, pmD);
               dataRow++;
+            });
+          } else {
+            // 평일: 기존 로직
+            for(let seq=1;seq<=mxSeq;seq++){
+              const veh = vehicleAtPos(seq,D);
+              const times = dayTimes[seq-1]||EMPTY_TIMES;
+              const assigned = S.drivers.filter(dr=>{
+                if(!dr.active) return false;
+                const v = getCellVal(y,m,dr.id,d);
+                return v===seq||v===String(seq);
+              });
+              const amD = assigned.find(dr=>getShiftForDay(y,m,dr.id,d)==='AM');
+              const pmD = assigned.find(dr=>getShiftForDay(y,m,dr.id,d)==='PM');
+              writeDataRow(dataRow, seq, veh, times, amD, pmD);
+              dataRow++;
+
+              // 수요 행 (평일 순번 1,2 뒤)
+              if(isSuDay && seq <= WED_VEHICLES.length){
+                const wv = WED_VEHICLES[seq-1];
+                const suDr = suDrivers[seq-1];
+                const sr = dataRow;
+
+                const ySt = {font:fontB,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder};
+                const yStN = {font:fontN,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder};
+                setCell(ws,sr,panel.seq,'수요',ySt);
+                setCell(ws,sr,panel.veh,wv.num,ySt);
+                setCell(ws,sr,panel.amName,suDr?suDr.name:'',yStN);
+                setCell(ws,sr,panel.am1,wv.am1,{font:fontRedTime,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder});
+                setCell(ws,sr,panel.am2,wv.am2,{font:fontB,alignment:ctrWrap,fill:{fgColor:{rgb:YELLOW}},border:thinBorder});
+                setCell(ws,sr,panel.pmName,'',{font:fontN,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder});
+                setCell(ws,sr,panel.pm1,'',{font:fontB,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder});
+                setCell(ws,sr,panel.pm2,'',{font:fontB,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder});
+                setCell(ws,sr,panel.pm3,'',{font:fontB,alignment:ctr,fill:{fgColor:{rgb:YELLOW}},border:thinBorder});
+                dataRow++;
+              }
             }
           }
           return dataRow;
@@ -4457,20 +4610,11 @@ async function exportDayImage(day){
     const imgMaxSeq = maxSeqForDay(y,m,day);
     const imgTimes = getScheduleTimes(y,m,day);
     const suDrivers = isWeekday ? S.drivers.filter(dr=>{ if(!dr.active) return false; return getCellVal(y,m,dr.id,day)==='수'; }) : [];
+    const isWkndImg = !isWeekday;
 
-    for(let seq=1;seq<=imgMaxSeq;seq++){
-      const veh = vehicleAtPos(seq,D);
-      const times = imgTimes[seq-1]||EMPTY_TIMES;
-      const assigned = S.drivers.filter(dr=>{
-        if(!dr.active) return false;
-        const v = getCellVal(y,m,dr.id,day);
-        return v===seq||v===String(seq);
-      });
-      const amD = assigned.find(dr=>getShiftForDay(y,m,dr.id,day)==='AM')||assigned[0];
-      const pmD = assigned.find(dr=>getShiftForDay(y,m,dr.id,day)==='PM')||assigned[1];
-
-      html += `<tr>
-        <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:800;background:#FFE699;">${seq}</td>
+    function imgDataRow(displaySeq, veh, times, amD, pmD){
+      return `<tr>
+        <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:800;background:#FFE699;">${displaySeq}</td>
         <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;">${veh}</td>
         <td style="border:1px solid #ccc;padding:6px;text-align:center;background:#e8f4ff;">${amD?amD.name:''}</td>
         ${rtTd(times.am1)}
@@ -4480,19 +4624,56 @@ async function exportDayImage(day){
         ${rtTd(times.pm2)}
         ${times.pm3?rtTd(times.pm3):'<td style="border:1px solid #ccc;padding:6px;text-align:center;">—</td>'}
       </tr>`;
+    }
 
-      // 수요(편도) 행 — 평일 순번 1,2 뒤에 삽입
-      if(isWeekday && seq <= WED_VEHICLES.length){
-        const wv = WED_VEHICLES[seq-1];
-        const suDr = suDrivers[seq-1];
-        html += `<tr>
-          <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;background:#FFFF00;">수${seq}</td>
-          <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;background:#FFFF00;">${wv.num}</td>
-          <td style="border:1px solid #ccc;padding:6px;text-align:center;background:#FFFF00;">${suDr?suDr.name:''}</td>
-          <td style="border:1px solid #ccc;padding:6px;text-align:center;color:#dc3545;font-weight:700;background:#FFFF00;">${wv.am1}</td>
-          <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;background:#FFFF00;">${wv.am2}</td>
-          <td style="border:1px solid #ccc;padding:6px;text-align:center;background:#FFFF00;" colspan="4">편도(오전)</td>
-        </tr>`;
+    if(isWkndImg){
+      // 주말/공휴일: 16개 포지션 전체 스캔 → 배정된 것만 수집 → 재번호
+      const filledPositions = [];
+      for(let seq=1;seq<=16;seq++){
+        const veh = vehicleAtPos(seq,D);
+        const assigned = S.drivers.filter(dr=>{
+          if(!dr.active) return false;
+          const v = getCellVal(y,m,dr.id,day);
+          return v===seq||v===String(seq);
+        });
+        if(assigned.length > 0){
+          filledPositions.push({seq, veh, assigned});
+        }
+      }
+      const displayList = filledPositions.slice(0, imgMaxSeq);
+      displayList.forEach((fp, idx) => {
+        const amD = fp.assigned.find(dr=>getShiftForDay(y,m,dr.id,day)==='AM')||fp.assigned[0];
+        const pmD = fp.assigned.find(dr=>getShiftForDay(y,m,dr.id,day)==='PM')||fp.assigned[1];
+        const times = imgTimes[idx]||EMPTY_TIMES;
+        html += imgDataRow(idx+1, fp.veh, times, amD, pmD);
+      });
+    } else {
+      // 평일: 기존 로직
+      for(let seq=1;seq<=imgMaxSeq;seq++){
+        const veh = vehicleAtPos(seq,D);
+        const times = imgTimes[seq-1]||EMPTY_TIMES;
+        const assigned = S.drivers.filter(dr=>{
+          if(!dr.active) return false;
+          const v = getCellVal(y,m,dr.id,day);
+          return v===seq||v===String(seq);
+        });
+        const amD = assigned.find(dr=>getShiftForDay(y,m,dr.id,day)==='AM')||assigned[0];
+        const pmD = assigned.find(dr=>getShiftForDay(y,m,dr.id,day)==='PM')||assigned[1];
+        html += imgDataRow(seq, veh, times, amD, pmD);
+
+        // 수요(편도) 행 — 평일 순번 1,2 뒤에 삽입
+        if(isWeekday && seq <= WED_VEHICLES.length){
+          const wv = WED_VEHICLES[seq-1];
+          const suDr = suDrivers[seq-1];
+          html += `<tr>
+            <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;background:#FFFF00;">수${seq}</td>
+            <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;background:#FFFF00;">${wv.num}</td>
+            <td style="border:1px solid #ccc;padding:6px;text-align:center;background:#FFFF00;">${suDr?suDr.name:''}</td>
+            <td style="border:1px solid #ccc;padding:6px;text-align:center;color:#dc3545;font-weight:700;background:#FFFF00;">${wv.am1}</td>
+            <td style="border:1px solid #ccc;padding:6px;text-align:center;font-weight:700;background:#FFFF00;">${wv.am2}</td>
+            <td style="border:1px solid #ccc;padding:6px;text-align:center;background:#FFFF00;" colspan="4">편도(오전)</td>
+          </tr>`;
+        }
       }
     }
     html += `</table>
@@ -4566,15 +4747,9 @@ async function exportAllImages(){
       const zTimes = getScheduleTimes(y,m,day);
       const zSuDrs = isWD ? S.drivers.filter(dr=>dr.active && getCellVal(y,m,dr.id,day)==='수') : [];
 
-      for(let seq=1;seq<=zMaxSeq;seq++){
-        const veh = vehicleAtPos(seq,D);
-        const times = zTimes[seq-1]||EMPTY_TIMES;
-        const asgn = S.drivers.filter(dr=>{ if(!dr.active) return false; const v=getCellVal(y,m,dr.id,day); return v===seq||v===String(seq); });
-        const amD = asgn.find(dr=>getShiftForDay(y,m,dr.id,day)==='AM')||asgn[0];
-        const pmD = asgn.find(dr=>getShiftForDay(y,m,dr.id,day)==='PM')||asgn[1];
-
-        html += `<tr>
-          <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:800;background:#FFE699;">${seq}</td>
+      function zDataRow(displaySeq, veh, times, amD, pmD){
+        return `<tr>
+          <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:800;background:#FFE699;">${displaySeq}</td>
           <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;">${veh}</td>
           <td style="border:1px solid #ccc;padding:5px;text-align:center;background:#e8f4ff;">${amD?amD.name:''}</td>
           ${rtTd2(times.am1)}
@@ -4584,18 +4759,47 @@ async function exportAllImages(){
           ${rtTd2(times.pm2)}
           ${times.pm3?rtTd2(times.pm3):'<td style="border:1px solid #ccc;padding:5px;text-align:center;">—</td>'}
         </tr>`;
+      }
 
-        if(isWD && seq <= WED_VEHICLES.length){
-          const wv = WED_VEHICLES[seq-1];
-          const suDr = zSuDrs[seq-1];
-          html += `<tr>
-            <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;background:#FFFF00;">수${seq}</td>
-            <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;background:#FFFF00;">${wv.num}</td>
-            <td style="border:1px solid #ccc;padding:5px;text-align:center;background:#FFFF00;">${suDr?suDr.name:''}</td>
-            <td style="border:1px solid #ccc;padding:5px;text-align:center;color:#dc3545;font-weight:700;background:#FFFF00;">${wv.am1}</td>
-            <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;background:#FFFF00;">${wv.am2}</td>
-            <td style="border:1px solid #ccc;padding:5px;text-align:center;background:#FFFF00;" colspan="4">편도(오전)</td>
-          </tr>`;
+      if(!isWD){
+        // 주말/공휴일: 16개 포지션 전체 스캔 → 배정된 것만 수집 → 재번호
+        const filledPositions = [];
+        for(let seq=1;seq<=16;seq++){
+          const veh = vehicleAtPos(seq,D);
+          const asgn = S.drivers.filter(dr=>{ if(!dr.active) return false; const v=getCellVal(y,m,dr.id,day); return v===seq||v===String(seq); });
+          if(asgn.length > 0){
+            filledPositions.push({seq, veh, asgn});
+          }
+        }
+        const displayList = filledPositions.slice(0, zMaxSeq);
+        displayList.forEach((fp, idx) => {
+          const amD = fp.asgn.find(dr=>getShiftForDay(y,m,dr.id,day)==='AM')||fp.asgn[0];
+          const pmD = fp.asgn.find(dr=>getShiftForDay(y,m,dr.id,day)==='PM')||fp.asgn[1];
+          const times = zTimes[idx]||EMPTY_TIMES;
+          html += zDataRow(idx+1, fp.veh, times, amD, pmD);
+        });
+      } else {
+        // 평일: 기존 로직
+        for(let seq=1;seq<=zMaxSeq;seq++){
+          const veh = vehicleAtPos(seq,D);
+          const times = zTimes[seq-1]||EMPTY_TIMES;
+          const asgn = S.drivers.filter(dr=>{ if(!dr.active) return false; const v=getCellVal(y,m,dr.id,day); return v===seq||v===String(seq); });
+          const amD = asgn.find(dr=>getShiftForDay(y,m,dr.id,day)==='AM')||asgn[0];
+          const pmD = asgn.find(dr=>getShiftForDay(y,m,dr.id,day)==='PM')||asgn[1];
+          html += zDataRow(seq, veh, times, amD, pmD);
+
+          if(isWD && seq <= WED_VEHICLES.length){
+            const wv = WED_VEHICLES[seq-1];
+            const suDr = zSuDrs[seq-1];
+            html += `<tr>
+              <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;background:#FFFF00;">수${seq}</td>
+              <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;background:#FFFF00;">${wv.num}</td>
+              <td style="border:1px solid #ccc;padding:5px;text-align:center;background:#FFFF00;">${suDr?suDr.name:''}</td>
+              <td style="border:1px solid #ccc;padding:5px;text-align:center;color:#dc3545;font-weight:700;background:#FFFF00;">${wv.am1}</td>
+              <td style="border:1px solid #ccc;padding:5px;text-align:center;font-weight:700;background:#FFFF00;">${wv.am2}</td>
+              <td style="border:1px solid #ccc;padding:5px;text-align:center;background:#FFFF00;" colspan="4">편도(오전)</td>
+            </tr>`;
+          }
         }
       }
       html += `</table>`;
